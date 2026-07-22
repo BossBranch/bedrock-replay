@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BedrockServerReplay" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#007AFF</item>
+        <item name="android:statusBarColor">#E8E8EA</item>
+        <item name="android:navigationBarColor">#E8E8EA</item>
+        <item name="android:windowBackground">#E8E8EA</item>
+    </style>
+</resources>

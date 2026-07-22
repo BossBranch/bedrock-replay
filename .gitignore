@@ -1,0 +1,31 @@
+node_modules/
+auth_cache/
+replays/
+config.json
+*.log
+.DS_Store
+
+launcher/dist/
+launcher/node_modules/
+
+_diag/
+_apk*/
+_cfgdump/
+
+# Android secrets & build artifacts
+android/release.keystore
+android/*.jks
+android/keystore.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/nodejs-project/
+android/native-prebuilds/
+
+# Cursor / local
+.cursor/
+*.apk
+
+ui-prefs.json
+

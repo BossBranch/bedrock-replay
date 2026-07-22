@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Запуск…</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #e8e8ea; color: #1c1c1e;
+      margin: 0; padding: 24px; line-height: 1.4; }
+    h1 { font-size: 1.2rem; margin: 0 0 8px; }
+    p { color: #636366; }
+    pre { background: #fff; padding: 12px; border-radius: 10px; font-size: 12px;
+      white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow: auto; }
+    .err { color: #b42318; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Bedrock Server Replay</h1>
+  <p id="msg">Запуск Node hub…</p>
+  <pre id="log"></pre>
+  <script>
+    const msg = document.getElementById('msg')
+    const log = document.getElementById('log')
+    let n = 0
+    async function tick () {
+      n++
+      try {
+        const r = await fetch('http://127.0.0.1:18766/api/status')
+        if (r.ok) {
+          location.replace('http://127.0.0.1:18766/')
+          return
+        }
+        msg.textContent = 'Hub отвечает с ошибкой…'
+      } catch (e) {
+        msg.textContent = 'Ждём API (' + n + ')… это не ошибка, идёт старт Node'
+        log.textContent = String(e && e.message || e)
+      }
+      if (n < 60) setTimeout(tick, 500)
+      else {
+        msg.innerHTML = '<span class="err">Hub не поднялся за 30 с</span>'
+        log.textContent += '\nПроверь logcat: adb logcat -s BedrockNode AndroidRuntime'
+      }
+    }
+    tick()
+  </script>
+</body>
+</html>

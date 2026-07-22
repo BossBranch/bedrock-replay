@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <title>Bedrock Server Replay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+
+  <header>
+    <h1>Bedrock Server Replay</h1>
+    <p class="byline">by BossBranch</p>
+    <p class="sub">v1.1</p>
+  </header>
+
+  <section class="card status" id="statusCard">
+    <div class="lang-bar">
+      <div class="lang-switch" id="langSwitch" role="group" aria-label="Language">
+        <button type="button" class="lang-opt active" data-lang="ru" id="btnLangRu">RU</button>
+        <button type="button" class="lang-opt" data-lang="en" id="btnLangEn">EN</button>
+      </div>
+    </div>
+    <div class="status-banner off" id="statusBanner">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span class="status-label" id="pill" data-i18n="statusOff">Остановлен</span>
+    </div>
+    <div class="status-meta">
+      <div class="port-chips">
+        <span class="chip live">LIVE</span>
+        <span class="chip play">PLAY</span>
+      </div>
+      <p class="hint" data-i18n-html="joinHint">В Minecraft: <strong class="mono">127.0.0.1:19132</strong> · <strong class="mono">:19133</strong></p>
+    </div>
+  </section>
+
+  <section class="card" id="serverCard">
+    <p class="section-title" data-i18n="serverTitle">Целевой сервер</p>
+    <label><span data-i18n="labelHost">Хост</span>
+      <input id="destHost" class="mono" autocomplete="off" placeholder="play.example.com" />
+    </label>
+    <label><span data-i18n="labelPort">Порт</span>
+      <input id="destPort" class="mono" inputmode="numeric" />
+    </label>
+
+    <div class="field">
+      <span class="field-label" data-i18n="labelVersion">Версия Minecraft</span>
+      <div class="version-picker" id="versionPicker">
+        <button type="button" class="version-btn mono" id="versionBtn" aria-haspopup="listbox" aria-expanded="false">
+          <span class="ver-line">
+            <span id="versionBtnDot" class="ver-dot" hidden aria-hidden="true"></span>
+            <span id="versionBtnText" class="ver-main">—</span>
+          </span>
+          <span class="chev" aria-hidden="true"></span>
+        </button>
+        <input type="hidden" id="version" value="" />
+      </div>
+      <label class="ext-row">
+        <input type="checkbox" id="chkVersionExtended" />
+        <span data-i18n="optVersionExtended">Расширенный список <em>экспериментально</em></span>
+      </label>
+      <p class="hint tiny warn" id="versionWarnHint" hidden data-i18n="hintVersionWarn">На этой версии возможны ошибки</p>
+    </div>
+  </section>
+
+  <section class="actions">
+    <button type="button" class="btn launch" id="btnStart" data-i18n="btnStart">Запустить</button>
+    <button type="button" class="btn stop" id="btnStop" data-i18n="btnStop">Стоп</button>
+  </section>
+
+  <section class="card" id="replaysCard">
+    <div class="section-head">
+      <p class="section-title" data-i18n="replaysTitle">Реплеи</p>
+      <button type="button" class="btn tiny" id="btnRefreshReplays" data-i18n="btnRefresh">Обновить</button>
+    </div>
+    <p class="now-playing" id="nowPlaying" hidden>
+      <span class="np-label" data-i18n="selectedLabel">Выбрано</span>
+      <span class="np-name mono" id="nowPlayingName">—</span>
+    </p>
+    <ul class="replay-list" id="replayList"></ul>
+    <p class="hint tiny path" id="replaysHint"></p>
+  </section>
+
+  <section class="toolbar">
+    <button type="button" class="btn ghost" id="btnToggleConfig" aria-expanded="false" data-i18n="btnConfig">Конфиг</button>
+    <button type="button" class="btn ghost" id="btnToggleLog" aria-expanded="false" data-i18n="btnLog">Терминал</button>
+  </section>
+
+  <section class="card panel" id="configPanel" hidden>
+    <p class="section-title" data-i18n="optsTitle">Параметры</p>
+    <label class="check-row"><input type="checkbox" id="cfgOverlayControls" checked /> <span data-i18n="optOverlay">Оверлей в Minecraft</span></label>
+    <label class="check-row"><input type="checkbox" id="cfgAutoRecord" /> <span data-i18n="optAutoRecord">Автозапись</span></label>
+    <label class="check-row"><input type="checkbox" id="cfgSaveOnDisconnect" checked /> <span data-i18n="optSaveDisconnect">Сохранять при выходе</span></label>
+    <label class="check-row"><input type="checkbox" id="cfgShowPlayerNames" checked /> <span data-i18n="optNames">Имена игроков</span></label>
+    <label class="check-row"><input type="checkbox" id="cfgPlayShowChat" /> <span data-i18n="optChat">Показывать чат при просмотре</span></label>
+    <label class="check-row"><input type="checkbox" id="cfgPlayShowSidebar" /> <span data-i18n="optSidebar">Показывать боковую панель</span></label>
+    <label class="check-row"><input type="checkbox" id="cfgPlaySounds" checked /> <span data-i18n="optSounds">Звуки записи</span></label>
+    <label class="check-row"><input type="checkbox" id="cfgPauseOnSeek" /> <span data-i18n="optPauseOnSeek">Пауза после перемотки / рестарта</span></label>
+    <div class="port-grid">
+      <label><span data-i18n="livePort">LIVE порт</span>
+        <input id="cfgLivePort" class="mono" inputmode="numeric" />
+      </label>
+      <label><span data-i18n="playPort">PLAY порт</span>
+        <input id="cfgPlayPort" class="mono" inputmode="numeric" />
+      </label>
+    </div>
+    <button type="button" class="btn primary" id="btnSave" data-i18n="btnSave">Сохранить</button>
+  </section>
+
+  <section class="card panel" id="logPanel" hidden>
+    <div class="log-head" data-i18n="logTitle">Терминал</div>
+    <pre id="log" class="log"></pre>
+  </section>
+
+  <div id="versionSheet" class="version-sheet" hidden>
+    <div class="version-sheet-backdrop" id="versionSheetBackdrop"></div>
+    <div class="version-sheet-panel" role="dialog" aria-label="Version">
+      <div class="version-sheet-head" data-i18n="labelVersion">Версия Minecraft</div>
+      <ul class="version-menu" id="versionMenu" role="listbox"></ul>
+    </div>
+  </div>
+
+  <div id="renameSheet" class="version-sheet" hidden>
+    <div class="version-sheet-backdrop" id="renameSheetBackdrop"></div>
+    <div class="version-sheet-panel rename-panel" role="dialog" aria-label="Переименовать">
+      <div class="version-sheet-head">Переименовать</div>
+      <label class="rename-label" for="renameInput">Новое имя записи</label>
+      <input id="renameInput" class="rename-input mono" autocomplete="off" />
+      <div class="rename-actions">
+        <button type="button" class="btn ghost" id="btnRenameCancel">Отмена</button>
+        <button type="button" class="btn primary" id="btnRenameOk">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

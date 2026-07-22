@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bedrock Server Replay</string>
+    <string name="notif_channel">Bedrock Server Replay</string>
+    <string name="notif_idle">UI готов · нажми Запустить</string>
+    <string name="notif_connected">UI готов · нажми Запустить</string>
+    <string name="notif_running">Прокси · 127.0.0.1 · 19132 / 19133</string>
+    <string name="notif_stop">Стоп</string>
+    <string name="hint_bg">Свёрнуто · прокси работает (свайп из недавних — стоп)</string>
+</resources>

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bedrock Server Replay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <img class="brand-avatar" src="assets/avatar.png" alt="" width="52" height="52" />
+        <div>
+          <h1>
+            Bedrock Server Replay
+            <span class="support-range mono" id="supportRange" title="Bedrock">1.16.201+</span>
+          </h1>
+          <p class="tag">
+            <span class="app-ver" id="appVersion">v—</span>
+            · <span data-i18n="tagReplay">Replay для серверов</span> · <span class="credit">by BossBranch</span>
+          </p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button type="button" class="icon-btn" id="btnTheme" aria-label="Theme" title="Theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <div class="lang-switch" id="langSwitch" role="group" aria-label="Language">
+          <button type="button" class="lang-opt" data-lang="ru" id="btnLangRu">RU</button>
+          <button type="button" class="lang-opt" data-lang="en" id="btnLangEn">EN</button>
+        </div>
+        <div class="status-pill" id="statusPill" data-state="off">
+          <span class="dot"></span>
+          <span id="statusText" data-i18n="statusOff">Остановлен</span>
+        </div>
+      </div>
+    </header>
+
+    <section class="hero-row">
+      <div class="addr-card">
+        <span class="label" data-i18n="liveLabel">LIVE · запись на сервере</span>
+        <div class="addr-fields">
+          <button type="button" class="addr-copy" data-copy-target="liveHost" title="Copy">
+            <span class="addr-key" data-i18n="addrIp">IP:</span>
+            <span class="addr-val mono" id="liveHost">—</span>
+          </button>
+          <button type="button" class="addr-copy" data-copy-target="livePort" title="Copy">
+            <span class="addr-key" data-i18n="addrPort">Порт:</span>
+            <span class="addr-val mono" id="livePort">—</span>
+          </button>
+        </div>
+      </div>
+      <div class="addr-card play">
+        <span class="label" data-i18n="playLabel">PLAY · просмотр</span>
+        <div class="addr-fields">
+          <button type="button" class="addr-copy" data-copy-target="playHost" title="Copy">
+            <span class="addr-key" data-i18n="addrIp">IP:</span>
+            <span class="addr-val mono" id="playHost">—</span>
+          </button>
+          <button type="button" class="addr-copy" data-copy-target="playPort" title="Copy">
+            <span class="addr-key" data-i18n="addrPort">Порт:</span>
+            <span class="addr-val mono" id="playPort">—</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div class="copy-toast" id="copyToast" hidden>
+      <span class="copy-toast-check" aria-hidden="true">✓</span>
+      <span data-i18n="copied">Скопировано</span>
+    </div>
+
+    <section class="controls">
+      <button type="button" class="btn launch" id="btnStart" data-i18n="btnStart">Запустить</button>
+      <button type="button" class="btn" id="btnStop" disabled data-i18n="btnStop">Стоп</button>
+      <button type="button" class="btn ghost phone-access-btn" id="btnPhoneAccess" data-i18n="btnPhoneAccess" data-i18n-title="btnPhoneAccessTitle" title="Телефон / LAN">Телефон</button>
+      <button type="button" class="btn ghost" id="btnConfigFile" data-i18n="btnConfigFile">Настройки (файл)</button>
+      <button type="button" class="btn ghost" id="btnCommands" data-i18n="btnHelp">Помощь</button>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2 data-i18n="panelServer">Сервер</h2>
+        <form id="cfgForm" class="form">
+          <label>
+            <span data-i18n="labelHost">Хост</span>
+            <input class="mono" name="destHost" id="destHost" autocomplete="off" placeholder="GamePE.ru" />
+          </label>
+          <label>
+            <span data-i18n="labelPort">Порт</span>
+            <input class="mono" name="destPort" id="destPort" type="number" min="1" max="65535" />
+          </label>
+          <div class="version-label">
+            <span class="version-field-title" data-i18n="labelVersion">Версия клиента</span>
+            <div class="version-row">
+              <div class="version-picker" id="versionPicker">
+                <button type="button" class="version-btn mono" id="versionBtn" aria-haspopup="listbox" aria-expanded="false">
+                  <span class="version-btn-text">
+                    <span class="ver-line">
+                      <span id="versionBtnDot" class="ver-dot" hidden aria-hidden="true"></span>
+                      <span id="versionBtnText" class="ver-main">—</span>
+                    </span>
+                  </span>
+                  <span class="chev" aria-hidden="true"></span>
+                </button>
+                <input type="hidden" name="version" id="version" value="" />
+                <ul class="version-menu" id="versionMenu" role="listbox" hidden></ul>
+              </div>
+              <label class="version-ext-row">
+                <input type="checkbox" id="chkVersionExtended" />
+                <span class="version-ext-text">
+                  <span data-i18n="optVersionExtended">Расширенный список</span>
+                  <span class="version-exp-hint" data-i18n="hintVersionExperimental">Экспериментально</span>
+                </span>
+              </label>
+            </div>
+            <p class="field-hint version-warn-hint" id="versionWarnHint" hidden data-i18n="hintVersionAdjacent">На этой версии возможны ошибки</p>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn save small" id="btnSaveServer" disabled data-i18n="btnSaveServer">Сохранить сервер</button>
+            <span class="form-note" id="saveNoteServer"></span>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel replays-panel">
+        <div class="panel-head">
+          <h2 data-i18n="panelReplays">Реплеи</h2>
+          <button type="button" class="btn ghost small" id="btnRefresh" data-i18n="btnRefresh">Обновить</button>
+        </div>
+        <div class="now-playing" id="nowPlaying" data-state="off">
+          <span class="np-label" data-i18n="nowPlayingLabel">Сейчас играет</span>
+          <span class="np-name mono" id="nowPlayingName">—</span>
+          <span class="np-status" id="nowPlayingStatus"></span>
+        </div>
+        <ul class="replay-list" id="replayList"></ul>
+        <button type="button" class="btn ghost small replay-folder-btn" id="btnReplaysFolder" data-i18n="btnReplaysFolder">Папка реплеев</button>
+      </section>
+    </div>
+
+    <section class="panel options-panel">
+      <div class="panel-head">
+        <h2 data-i18n="panelOptions">Параметры</h2>
+        <div class="form-actions options-save">
+          <button type="button" class="btn save small" id="btnSaveOpts" disabled data-i18n="btnSaveOpts">Сохранить параметры</button>
+          <span class="form-note" id="saveNoteOpts"></span>
+        </div>
+      </div>
+      <div class="toggle-list" id="toggleList">
+        <div class="toggle-row" data-key="controlHotbar">
+          <div class="toggle-text">
+            <span class="toggle-title" data-i18n="optHotbar">Горячие клавиши</span>
+            <span class="toggle-hint" data-i18n="optHotbarHint">Включает горячие клавиши для управления просмотром. Не работают при слежке за собой.</span>
+          </div>
+          <div class="toggle-controls">
+            <div class="info-tip">
+              <button type="button" class="info-tip-btn" data-i18n-aria="optHotbarTipAria" aria-label="Подсказка по горячим клавишам" tabindex="0">i</button>
+              <div class="info-tip-pop" role="tooltip">
+                <p class="info-tip-lead" data-i18n="optHotbarTipLead">Нажимайте эти клавиши в режиме просмотра, чтобы управлять записью.</p>
+                <img class="info-tip-img" src="assets/hotkeys-keyboard.png" alt="" width="420" height="140" data-i18n-alt="optHotbarTipAlt" />
+                <p class="info-tip-map" data-i18n="optHotbarTipMap">1 пауза · 2–4 скорость · 5/6 перемотка · 7 след. игрок · 8 рестарт</p>
+              </div>
+            </div>
+            <div class="seg" role="group" data-i18n-aria="optHotbar" aria-label="Горячие клавиши">
+              <button type="button" class="seg-btn" data-v="true" data-i18n="yes">Да</button>
+              <button type="button" class="seg-btn" data-v="false" data-i18n="no">Нет</button>
+            </div>
+          </div>
+        </div>
+        <div class="toggle-row" data-key="autoRecord">
+          <div class="toggle-text">
+            <span class="toggle-title" data-i18n="optAutoRecord">Автозапись</span>
+            <span class="toggle-hint" data-i18n="optAutoRecordHint">Начинает писать сразу при входе на LIVE, без команды .start</span>
+          </div>
+          <div class="seg" role="group" data-i18n-aria="optAutoRecord" aria-label="Автозапись">
+            <button type="button" class="seg-btn" data-v="true" data-i18n="yes">Да</button>
+            <button type="button" class="seg-btn" data-v="false" data-i18n="no">Нет</button>
+          </div>
+        </div>
+        <div class="toggle-row" data-key="saveOnDisconnect">
+          <div class="toggle-text">
+            <span class="toggle-title" data-i18n="optSaveDisconnect">Сохранять при выходе</span>
+            <span class="toggle-hint" data-i18n="optSaveDisconnectHint">Если выйти из игры без .stop — запись всё равно сохранится</span>
+          </div>
+          <div class="seg" role="group" data-i18n-aria="optSaveDisconnect" aria-label="Сохранять при выходе">
+            <button type="button" class="seg-btn" data-v="true" data-i18n="yes">Да</button>
+            <button type="button" class="seg-btn" data-v="false" data-i18n="no">Нет</button>
+          </div>
+        </div>
+        <div class="toggle-row" data-key="showPlayerNames">
+          <div class="toggle-text">
+            <span class="toggle-title" data-i18n="optNames">Имена игроков</span>
+            <span class="toggle-hint" data-i18n="optNamesHint">Показывать ники других игроков над головой при просмотре</span>
+          </div>
+          <div class="seg" role="group" data-i18n-aria="optNames" aria-label="Имена игроков">
+            <button type="button" class="seg-btn" data-v="true" data-i18n="yes">Да</button>
+            <button type="button" class="seg-btn" data-v="false" data-i18n="no">Нет</button>
+          </div>
+        </div>
+        <div class="toggle-row" data-key="playShowChat">
+          <div class="toggle-text">
+            <span class="toggle-title" data-i18n="optChat">Показывать чат при просмотре</span>
+            <span class="toggle-hint" data-i18n="optChatHint">Во время реплея показывает сохранённые сообщения</span>
+          </div>
+          <div class="seg" role="group" data-i18n-aria="optChat" aria-label="Показывать чат при просмотре">
+            <button type="button" class="seg-btn" data-v="true" data-i18n="yes">Да</button>
+            <button type="button" class="seg-btn" data-v="false" data-i18n="no">Нет</button>
+          </div>
+        </div>
+        <div class="toggle-row" data-key="playShowSidebar">
+          <div class="toggle-text">
+            <span class="toggle-title" data-i18n="optSidebar">Показывать боковую панель</span>
+            <span class="toggle-hint" data-i18n="optSidebarHint">Таблица очков / список сбоку экрана из записи</span>
+          </div>
+          <div class="seg" role="group" data-i18n-aria="optSidebar" aria-label="Показывать боковую панель">
+            <button type="button" class="seg-btn" data-v="true" data-i18n="yes">Да</button>
+            <button type="button" class="seg-btn" data-v="false" data-i18n="no">Нет</button>
+          </div>
+        </div>
+        <div class="toggle-row" data-key="playSounds">
+          <div class="toggle-text">
+            <span class="toggle-title" data-i18n="optSounds">Звуки записи</span>
+            <span class="toggle-hint" data-i18n="optSoundsHint">Воспроизводит звуки мира из реплея</span>
+          </div>
+          <div class="seg" role="group" data-i18n-aria="optSounds" aria-label="Звуки записи">
+            <button type="button" class="seg-btn" data-v="true" data-i18n="yes">Да</button>
+            <button type="button" class="seg-btn" data-v="false" data-i18n="no">Нет</button>
+          </div>
+        </div>
+        <div class="toggle-row" data-key="pauseOnSeek">
+          <div class="toggle-text">
+            <span class="toggle-title" data-i18n="optPauseOnSeek">Пауза после перемотки / рестарта</span>
+            <span class="toggle-hint" data-i18n="optPauseOnSeekHint">После ±N / .seek / .restart ставить на паузу (по умолчанию нет)</span>
+          </div>
+          <div class="seg" role="group" data-i18n-aria="optPauseOnSeek" aria-label="Пауза после перемотки / рестарта">
+            <button type="button" class="seg-btn" data-v="true" data-i18n="yes">Да</button>
+            <button type="button" class="seg-btn" data-v="false" data-i18n="no">Нет</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="panel-head">
+        <h2 data-i18n="panelLog">Лог</h2>
+        <button type="button" class="btn ghost small" id="btnClearLog" data-i18n="btnClearLog">Очистить</button>
+      </div>
+      <pre class="log mono" id="log"></pre>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="phoneModal" hidden>
+    <div class="modal modal-sm phone-modal" role="dialog" aria-modal="true" aria-labelledby="phoneModalTitle">
+      <div class="modal-head">
+        <h2 id="phoneModalTitle" data-i18n="phoneModalTitle">Игра со смартфона</h2>
+        <button type="button" class="modal-close" id="btnClosePhoneModal" aria-label="Close">×</button>
+      </div>
+      <p class="modal-note" data-i18n="phoneModalApk">Скачайте Android-приложение Bedrock Server Replay и зайдите в Minecraft с телефона.</p>
+      <p class="modal-note" data-i18n="phoneModalOr">Или используйте этот ПК как хост — Minecraft на телефоне подключается к IP ниже (одна Wi‑Fi сеть):</p>
+      <div class="phone-modal-host" id="phoneStrip">
+        <div class="phone-mode-row">
+          <span class="phone-mode-title" data-i18n="phoneModeTitle">Откуда заходите</span>
+          <div class="seg phone-mode-seg" id="phoneModeSeg" role="group" data-i18n-aria="phoneModeTitle" aria-label="Откуда заходите">
+            <button type="button" class="seg-btn active" data-phone="pc" id="btnPhoneModePc" data-i18n="phoneModePc">ПК</button>
+            <button type="button" class="seg-btn" data-phone="phone" id="btnPhoneModePhone" data-i18n="phoneModePhone">Смартфон</button>
+          </div>
+        </div>
+        <div class="phone-strip-body" id="phoneStripBody">
+          <span class="phone-strip-hint" id="phoneIpHint" data-i18n="phoneIpHint">ПК и телефон в одной Wi‑Fi</span>
+          <span class="mono phone-ip-value" id="advertiseHost" aria-live="polite">—</span>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn launch small" id="btnPhoneModalOk" data-i18n="phoneModalOk">Готово</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="versionWarnModal" hidden>
+    <div class="modal modal-sm" role="alertdialog" aria-modal="true" aria-labelledby="versionWarnTitle" aria-describedby="versionWarnBody">
+      <div class="modal-head">
+        <h2 id="versionWarnTitle" data-i18n="versionWarnTitle">Экспериментально</h2>
+      </div>
+      <p class="modal-note" id="versionWarnBody" data-i18n="versionWarnBody">Расширенный список может включать нестабильные версии клиента. Запись и просмотр на них могут работать хуже.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn launch small" id="btnVersionWarnOk" data-i18n="versionWarnOk">Понятно</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="commandsModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="commandsModalTitle">
+      <div class="modal-head">
+        <h2 id="commandsModalTitle" data-i18n="cmdTitle">Команды чата</h2>
+        <button type="button" class="modal-close" id="btnCloseCommands" aria-label="Close">×</button>
+      </div>
+      <p class="field-hint cmd-data-hint" data-i18n="helpDataPath">Реплеи и настройки: %APPDATA%\BedrockServerReplay (остаются после удаления программы)</p>
+      <div class="cmd-block live">
+        <h3 data-i18n="cmdLiveTitle">LIVE · запись</h3>
+        <ul class="cmd-list">
+          <li><span class="cmd">.start</span><span class="desc" data-i18n="cmdStart">Начать запись</span></li>
+          <li><span class="cmd">.stop</span><span class="desc" data-i18n="cmdStop">Остановить и сохранить</span></li>
+          <li><span class="cmd">.play</span><span class="desc" data-i18n="cmdPlay">Открыть последний реплей (или .play имя)</span></li>
+          <li><span class="cmd">.status</span><span class="desc" data-i18n="cmdStatus">Статус записи</span></li>
+          <li><span class="cmd">.replays</span><span class="desc" data-i18n="cmdReplays">Список файлов</span></li>
+          <li><span class="cmd">.help</span><span class="desc" data-i18n="cmdHelp">Краткая справка</span></li>
+        </ul>
+      </div>
+      <div class="cmd-block play">
+        <h3 data-i18n="cmdPlayTitle">PLAY · просмотр</h3>
+        <ul class="cmd-list">
+          <li><span class="cmd">.pause</span><span class="desc" data-i18n="cmdPause">Пауза / продолжить</span></li>
+          <li><span class="cmd">.restart</span><span class="desc" data-i18n="cmdRestart">С начала (камера сохраняется)</span></li>
+          <li><span class="cmd">.seek ±N</span><span class="desc" data-i18n="cmdSeek">Перемотка на N секунд</span></li>
+          <li><span class="cmd">.goto M:SS</span><span class="desc" data-i18n="cmdGoto">Перейти ко времени</span></li>
+          <li><span class="cmd">.speed N</span><span class="desc" data-i18n="cmdSpeed">Скорость (напр. .speed 2)</span></li>
+          <li><span class="cmd">.me</span><span class="desc" data-i18n="cmdMe">Следить за собой (запись)</span></li>
+          <li><span class="cmd">.spec</span><span class="desc" data-i18n="cmdSpec">Следить за игроком (.spec имя)</span></li>
+          <li><span class="cmd">.next</span><span class="desc" data-i18n="cmdNext">Следующий игрок</span></li>
+          <li><span class="cmd">.free</span><span class="desc" data-i18n="cmdFree">Свободная камера</span></li>
+          <li><span class="cmd">.live</span><span class="desc" data-i18n="cmdLiveBack">Выйти из просмотра (потом зайди на LIVE)</span></li>
+          <li><span class="cmd">.time</span><span class="desc" data-i18n="cmdTime">Текущее время реплея</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

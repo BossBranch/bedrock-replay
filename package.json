@@ -1,0 +1,31 @@
+{
+  "name": "bedrock-replay",
+  "version": "1.1.0",
+  "description": "Record and play Minecraft Bedrock world replays (packet-based)",
+  "type": "module",
+  "main": "src/cli.js",
+  "scripts": {
+    "postinstall": "node tools/patch-deps.mjs",
+    "patch-deps": "node tools/patch-deps.mjs",
+    "start": "node src/cli.js start",
+    "record": "node src/cli.js start",
+    "play": "node src/cli.js play",
+    "list": "node src/cli.js list",
+    "versions": "node src/cli.js versions",
+    "test": "node src/selftest.js",
+    "launcher": "npm start --prefix launcher",
+    "launcher:install": "npm install --prefix launcher",
+    "dist": "npm run patch-deps && npm install --prefix launcher && npm run dist --prefix launcher",
+    "android:libnode": "node tools/download-libnode.mjs",
+    "android:raknet": "node tools/build-raknet-android.mjs --abi arm64-v8a",
+    "android:prepare": "node tools/prepare-android-node.mjs",
+    "android:bundle": "npm run android:libnode && npm run android:raknet && npm run android:prepare"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "bedrock-protocol": "^3.57.0"
+  }
+}

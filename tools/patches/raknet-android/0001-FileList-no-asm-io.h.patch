@@ -1,0 +1,15 @@
+diff --git a/raknet/Source/FileList.cpp b/raknet/Source/FileList.cpp
+--- a/raknet/Source/FileList.cpp
++++ b/raknet/Source/FileList.cpp
+@@ -14,9 +14,10 @@
+ #if _RAKNET_SUPPORT_FileOperations==1
+ 
+ #include <stdio.h> // RAKNET_DEBUG_PRINTF
+ #include "RakAssert.h"
+ #if defined(ANDROID)
+-#include <asm/io.h>
++// Android NDK has no <asm/io.h> (old Bionic quirk in upstream RakNet)
++#include <unistd.h>
+ #elif defined(_WIN32) || defined(__CYGWIN__)
+ #include <io.h>
+ 
