@@ -87,8 +87,5 @@
       "deleteAppDataOnUninstall": false
     },
     "asar": true
-  },
-  "dependencies": {
-    "bedrock-replay": "file:.."
   }
 }
