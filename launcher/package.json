@@ -86,10 +86,7 @@
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },
-    "asar": true,
-    "asarUnpack": [
-      "**/*.node"
-    ]
+    "asar": true
   },
   "dependencies": {
     "bedrock-replay": "file:.."
