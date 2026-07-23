@@ -1,6 +1,6 @@
 ﻿# Bedrock Server Replay
 
-**v1.1.0**
+**v1.1.0** · Bedrock **1.16.201 – latest** (full features from **1.19.50+**)
 
 Packet record & replay for Minecraft: Bedrock Edition (server sessions).  
 Запись и просмотр реплеев Minecraft Bedrock (серверные сессии).
@@ -9,12 +9,12 @@ Packet record & replay for Minecraft: Bedrock Edition (server sessions).
 
 | Range / Диапазон | Features / Возможности |
 |------------------|------------------------|
-| **≥ 1.19.50** | Full: freecam + spectator + `.me` / `.spec` |
+| **≥ 1.19.50** (up to current / до актуальной) | Full: freecam + spectator + `.me` / `.spec` |
 | **1.16.201 – 1.19.40** | Freecam only (no possess) |
 | **&lt; 1.16.201** | Not supported / не поддерживается |
 
-Client version in the app must match your Minecraft. Hotfixes with the same protocol (e.g. 1.26.33 → 1.26.30) are OK.  
-Версия в приложении должна совпадать с Minecraft. Хотфиксы с тем же протоколом — нормально.
+Client version in the app must match your Minecraft.  
+Версия в приложении должна совпадать с Minecraft.
 
 ---
 
@@ -22,12 +22,12 @@ Client version in the app must match your Minecraft. Hotfixes with the same prot
 
 ### Download
 
-Binaries are in **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
+Pick **one** platform — you do **not** need both. Files are in **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
 
 | Platform | File |
 |----------|------|
-| Windows | `Bedrock-Server-Replay-Setup.exe` |
-| Android | `BedrockServerReplay-1.1.0.apk` |
+| **Windows** | `Bedrock-Server-Replay-Setup.exe` |
+| **or Android** | `BedrockServerReplay-1.1.0.apk` |
 
 ### Quick start
 
@@ -49,8 +49,7 @@ Comments and feedback: use **Issues** / **Discussions**.
 ### Credits
 
 Idea of a Bedrock proxy that records and replays gameplay was inspired by  
-[brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay) (Java).  
-This project is a separate implementation (PC launcher + Android), not a fork.
+[brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay).
 
 ---
 
@@ -58,12 +57,12 @@ This project is a separate implementation (PC launcher + Android), not a fork.
 
 ### Скачать
 
-Сборки лежат в **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
+Нужна **одна** платформа — **не обе**. Файлы в **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
 
 | Платформа | Файл |
 |-----------|------|
-| Windows | `Bedrock-Server-Replay-Setup.exe` |
-| Android | `BedrockServerReplay-1.1.0.apk` |
+| **Windows** | `Bedrock-Server-Replay-Setup.exe` |
+| **или Android** | `BedrockServerReplay-1.1.0.apk` |
 
 ### Быстрый старт
 
@@ -85,5 +84,4 @@ This project is a separate implementation (PC launcher + Android), not a fork.
 ### Благодарности
 
 Идея прокси-записи/просмотра Bedrock вдохновлена проектом  
-[brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay) (Java).  
-Это отдельная реализация (лаунчер для ПК + Android), не форк.
+[brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay).
