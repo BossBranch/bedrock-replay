@@ -24,19 +24,15 @@ Client version in the app must match your Minecraft.
 
 Pick **one** platform — you do **not** need both. Files are in **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
 
-**Windows**
-
-| File |
-|------|
-| `Bedrock-Server-Replay-Setup.exe` |
+| Platform | File |
+|----------|------|
+| Windows | `Bedrock-Server-Replay-Setup.exe` |
 
 **or**
 
-**Android**
-
-| File |
-|------|
-| `BedrockServerReplay-1.1.0.apk` |
+| Platform | File |
+|----------|------|
+| Android | `BedrockServerReplay-1.1.0.apk` |
 
 ### Quick start
 
@@ -66,19 +62,15 @@ Idea of a Bedrock proxy that records and replays gameplay was inspired by
 
 Нужна **одна** платформа — **не обе**. Файлы в **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
 
-**Windows**
-
-| Файл |
-|------|
-| `Bedrock-Server-Replay-Setup.exe` |
+| Платформа | Файл |
+|-----------|------|
+| Windows | `Bedrock-Server-Replay-Setup.exe` |
 
 **или**
 
-**Android**
-
-| Файл |
-|------|
-| `BedrockServerReplay-1.1.0.apk` |
+| Платформа | Файл |
+|-----------|------|
+| Android | `BedrockServerReplay-1.1.0.apk` |
 
 ### Быстрый старт
 
