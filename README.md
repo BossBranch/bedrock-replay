@@ -2,8 +2,8 @@
 
 **v1.1.0** · Bedrock **1.16.201 – latest** (full features from **1.19.50+**)
 
-Packet record & replay for Minecraft: Bedrock Edition (server sessions).  
-Запись и просмотр реплеев Minecraft Bedrock (серверные сессии).
+Packet record & replay for Minecraft: Bedrock Edition.  
+Запись и просмотр реплеев Minecraft Bedrock.
 
 ### Supported versions / Поддерживаемые версии
 
@@ -24,10 +24,19 @@ Client version in the app must match your Minecraft.
 
 Pick **one** platform — you do **not** need both. Files are in **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
 
-| Platform | File |
-|----------|------|
-| **Windows** | `Bedrock-Server-Replay-Setup.exe` |
-| **or Android** | `BedrockServerReplay-1.1.0.apk` |
+**Windows**
+
+| File |
+|------|
+| `Bedrock-Server-Replay-Setup.exe` |
+
+**or**
+
+**Android**
+
+| File |
+|------|
+| `BedrockServerReplay-1.1.0.apk` |
 
 ### Quick start
 
@@ -44,8 +53,6 @@ This tool records **server sessions** (join via Live proxy). For a normal local 
 - use a world replay add-on such as **[ReplayCraft](https://github.com/darkblockgaming/ReplayCraft)**, or  
 - host the world on **[Bedrock Dedicated Server (BDS)](https://www.minecraft.net/download/server/bedrock)** and point this app at that BDS.
 
-Comments and feedback: use **Issues** / **Discussions**.
-
 ### Credits
 
 Idea of a Bedrock proxy that records and replays gameplay was inspired by  
@@ -59,10 +66,19 @@ Idea of a Bedrock proxy that records and replays gameplay was inspired by
 
 Нужна **одна** платформа — **не обе**. Файлы в **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
 
-| Платформа | Файл |
-|-----------|------|
-| **Windows** | `Bedrock-Server-Replay-Setup.exe` |
-| **или Android** | `BedrockServerReplay-1.1.0.apk` |
+**Windows**
+
+| Файл |
+|------|
+| `Bedrock-Server-Replay-Setup.exe` |
+
+**или**
+
+**Android**
+
+| Файл |
+|------|
+| `BedrockServerReplay-1.1.0.apk` |
 
 ### Быстрый старт
 
@@ -78,8 +94,6 @@ Idea of a Bedrock proxy that records and replays gameplay was inspired by
 
 - взять аддон вроде **[ReplayCraft](https://github.com/darkblockgaming/ReplayCraft)**, или  
 - поднять мир на **[Bedrock Dedicated Server (BDS)](https://www.minecraft.net/download/server/bedrock)** и указать его в этом приложении.
-
-Комментарии — в **Issues** / **Discussions**.
 
 ### Благодарности
 
