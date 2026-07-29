@@ -1,6 +1,6 @@
 ﻿# Bedrock Server Replay
 
-**v1.1.0** · Bedrock **1.16.201 – latest** (full features from **1.19.50+**)
+**v1.1.1** · Bedrock **1.16.201 – latest** (full features from **1.19.50+**)
 
 Packet record & replay for Minecraft: Bedrock Edition.  
 Запись и просмотр реплеев Minecraft Bedrock.
@@ -32,7 +32,7 @@ Pick **one** platform — you do **not** need both. Files are in **[Releases](ht
 
 | Platform | File |
 |----------|------|
-| Android | `BedrockServerReplay-1.1.0.apk` |
+| Android | `BedrockServerReplay-1.1.1.apk` |
 
 ### Quick start
 
@@ -70,7 +70,7 @@ Idea of a Bedrock proxy that records and replays gameplay was inspired by
 
 | Платформа | Файл |
 |-----------|------|
-| Android | `BedrockServerReplay-1.1.0.apk` |
+| Android | `BedrockServerReplay-1.1.1.apk` |
 
 ### Быстрый старт
 
