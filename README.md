@@ -34,7 +34,7 @@ Pick **one** platform — you do **not** need both. Files are in **[Releases](ht
 
 | Platform | File |
 |----------|------|
-| Android | `BedrockServerReplay-1.1.1.apk` |
+| Android | `BedrockServerReplay.apk` |
 
 ### Quick start
 
@@ -72,7 +72,7 @@ Idea of a Bedrock proxy that records and replays gameplay was inspired by
 
 | Платформа | Файл |
 |-----------|------|
-| Android | `BedrockServerReplay-1.1.1.apk` |
+| Android | `BedrockServerReplay.apk` |
 
 ### Быстрый старт
 
