@@ -1,6 +1,6 @@
 ﻿# Bedrock Server Replay
 
-**v1.1.1**
+**v1.1.2**
 
 Bedrock **1.16.201 – latest**
 
