@@ -1,6 +1,8 @@
 ﻿# Bedrock Server Replay
 
-**v1.1.1** · Bedrock **1.16.201 – latest**
+**v1.1.1**
+
+Bedrock **1.16.201 – latest**
 
 Packet record & replay for Minecraft: Bedrock Edition.  
 Запись и просмотр реплеев Minecraft Bedrock.
