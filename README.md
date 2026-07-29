@@ -1,6 +1,6 @@
 ﻿# Bedrock Server Replay
 
-**v1.1.1** · Bedrock **1.16.201 – latest** (full features from **1.19.50+**)
+**v1.1.1** · Bedrock **1.16.201 – latest**
 
 Packet record & replay for Minecraft: Bedrock Edition.  
 Запись и просмотр реплеев Minecraft Bedrock.
@@ -9,8 +9,8 @@ Packet record & replay for Minecraft: Bedrock Edition.
 
 | Range / Диапазон | Features / Возможности |
 |------------------|------------------------|
-| **≥ 1.19.50** (up to current / до актуальной) | Full: freecam + spectator + `.me` / `.spec` |
-| **1.16.201 – 1.19.40** | Freecam only (no possess) |
+| **≥ 1.19.50** | Full |
+| **1.16.201 – 1.19.40** | Freecam only |
 | **&lt; 1.16.201** | Not supported / не поддерживается |
 
 Client version in the app must match your Minecraft.  
