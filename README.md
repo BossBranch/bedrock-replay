@@ -1,22 +1,22 @@
-п»ї# Bedrock Server Replay
+# Bedrock Server Replay
 
-**v1.1.2**
+**v1.1.3**
 
-Bedrock **1.16.201 вЂ“ latest**
+Bedrock **1.16.201 – latest**
 
 Packet record & replay for Minecraft: Bedrock Edition.  
-Р—Р°РїРёСЃСЊ Рё РїСЂРѕСЃРјРѕС‚СЂ СЂРµРїР»РµРµРІ Minecraft Bedrock.
+Запись и просмотр реплеев Minecraft Bedrock.
 
-### Supported versions / РџРѕРґРґРµСЂР¶РёРІР°РµРјС‹Рµ РІРµСЂСЃРёРё
+### Supported versions / Поддерживаемые версии
 
-| Range / Р”РёР°РїР°Р·РѕРЅ | Features / Р’РѕР·РјРѕР¶РЅРѕСЃС‚Рё |
+| Range / Диапазон | Features / Возможности |
 |------------------|------------------------|
-| **в‰Ґ 1.19.50** | Full |
-| **1.16.201 вЂ“ 1.19.40** | Freecam only |
-| **&lt; 1.16.201** | Not supported / РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ |
+| **? 1.19.50** | Full |
+| **1.16.201 – 1.19.40** | Freecam only |
+| **&lt; 1.16.201** | Not supported / не поддерживается |
 
 Client version in the app must match your Minecraft.  
-Р’РµСЂСЃРёСЏ РІ РїСЂРёР»РѕР¶РµРЅРёРё РґРѕР»Р¶РЅР° СЃРѕРІРїР°РґР°С‚СЊ СЃ Minecraft.
+Версия в приложении должна совпадать с Minecraft.
 
 ---
 
@@ -24,7 +24,7 @@ Client version in the app must match your Minecraft.
 
 ### Download
 
-Pick **one** platform вЂ” you do **not** need both. Files are in **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
+Pick **one** platform — you do **not** need both. Files are in **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
 
 | Platform | File |
 |----------|------|
@@ -39,10 +39,10 @@ Pick **one** platform вЂ” you do **not** need both. Files are in **[Releases](ht
 ### Quick start
 
 1. Install / open the app, set the real server address and Bedrock version.
-2. In Minecraft в†’ Servers:
-   - **Live** в†’ your PC/phone IP, port **19132** (record)
-   - **Play** в†’ same host, port **19133** (replay)
-3. Join **Live** в†’ start recording в†’ play on the server в†’ open the replay on **Play**.
+2. In Minecraft > Servers:
+   - **Live** > your PC/phone IP, port **19132** (record)
+   - **Play** > same host, port **19133** (replay)
+3. Join **Live** > start recording > play on the server > open the replay on **Play**.
 
 ### Local / singleplayer worlds
 
@@ -58,38 +58,38 @@ Idea of a Bedrock proxy that records and replays gameplay was inspired by
 
 ---
 
-## Р СѓСЃСЃРєРёР№
+## Русский
 
-### РЎРєР°С‡Р°С‚СЊ
+### Скачать
 
-РќСѓР¶РЅР° **РѕРґРЅР°** РїР»Р°С‚С„РѕСЂРјР° вЂ” **РЅРµ РѕР±Рµ**. Р¤Р°Р№Р»С‹ РІ **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
+Нужна **одна** платформа — **не обе**. Файлы в **[Releases](https://github.com/BossBranch/bedrock-replay/releases)**:
 
-| РџР»Р°С‚С„РѕСЂРјР° | Р¤Р°Р№Р» |
+| Платформа | Файл |
 |-----------|------|
 | Windows | `Bedrock-Server-Replay-Setup.exe` |
 
-**РёР»Рё**
+**или**
 
-| РџР»Р°С‚С„РѕСЂРјР° | Р¤Р°Р№Р» |
+| Платформа | Файл |
 |-----------|------|
 | Android | `BedrockServerReplay.apk` |
 
-### Р‘С‹СЃС‚СЂС‹Р№ СЃС‚Р°СЂС‚
+### Быстрый старт
 
-1. РЈСЃС‚Р°РЅРѕРІРё / РѕС‚РєСЂРѕР№ РїСЂРёР»РѕР¶РµРЅРёРµ, СѓРєР°Р¶Рё Р°РґСЂРµСЃ СЃРµСЂРІРµСЂР° Рё РІРµСЂСЃРёСЋ Bedrock.
-2. Р’ Minecraft в†’ РЎРµСЂРІРµСЂС‹:
-   - **Live** в†’ IP РџРљ/С‚РµР»РµС„РѕРЅР°, РїРѕСЂС‚ **19132** (Р·Р°РїРёСЃСЊ)
-   - **Play** в†’ С‚РѕС‚ Р¶Рµ С…РѕСЃС‚, РїРѕСЂС‚ **19133** (РїСЂРѕСЃРјРѕС‚СЂ)
-3. Р—Р°Р№РґРё РЅР° **Live** в†’ РЅР°С‡РЅРё Р·Р°РїРёСЃСЊ в†’ РїРѕРёРіСЂР°Р№ в†’ СЃРјРѕС‚СЂРё СЂРµРїР»РµР№ РЅР° **Play**.
+1. Установи / открой приложение, укажи адрес сервера и версию Bedrock.
+2. В Minecraft > Серверы:
+   - **Live** > IP ПК/телефона, порт **19132** (запись)
+   - **Play** > тот же хост, порт **19133** (просмотр)
+3. Зайди на **Live** > начни запись > поиграй > смотри реплей на **Play**.
 
-### Р›РѕРєР°Р»СЊРЅС‹Рµ / РѕР±С‹С‡РЅС‹Рµ РјРёСЂС‹
+### Локальные / обычные миры
 
-Р­С‚РѕС‚ РёРЅСЃС‚СЂСѓРјРµРЅС‚ РїРёС€РµС‚ **СЃРµСЂРІРµСЂРЅС‹Рµ СЃРµСЃСЃРёРё** (РІС…РѕРґ С‡РµСЂРµР· Live-РїСЂРѕРєСЃРё). Р”Р»СЏ РѕР±С‹С‡РЅРѕРіРѕ Р»РѕРєР°Р»СЊРЅРѕРіРѕ РјРёСЂР° РјРѕР¶РЅРѕ:
+Этот инструмент пишет **серверные сессии** (вход через Live-прокси). Для обычного локального мира можно:
 
-- РІР·СЏС‚СЊ Р°РґРґРѕРЅ РІСЂРѕРґРµ **[ReplayCraft](https://github.com/darkblockgaming/ReplayCraft)**, РёР»Рё  
-- РїРѕРґРЅСЏС‚СЊ РјРёСЂ РЅР° **[Bedrock Dedicated Server (BDS)](https://www.minecraft.net/download/server/bedrock)** Рё СѓРєР°Р·Р°С‚СЊ РµРіРѕ РІ СЌС‚РѕРј РїСЂРёР»РѕР¶РµРЅРёРё.
+- взять аддон вроде **[ReplayCraft](https://github.com/darkblockgaming/ReplayCraft)**, или  
+- поднять мир на **[Bedrock Dedicated Server (BDS)](https://www.minecraft.net/download/server/bedrock)** и указать его в этом приложении.
 
-### Р‘Р»Р°РіРѕРґР°СЂРЅРѕСЃС‚Рё
+### Благодарности
 
-РРґРµСЏ РїСЂРѕРєСЃРё-Р·Р°РїРёСЃРё/РїСЂРѕСЃРјРѕС‚СЂР° Bedrock РІРґРѕС…РЅРѕРІР»РµРЅР° РїСЂРѕРµРєС‚РѕРј  
+Идея прокси-записи/просмотра Bedrock вдохновлена проектом  
 [brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay).
