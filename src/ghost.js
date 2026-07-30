@@ -5,12 +5,6 @@
 import { randomUUID } from 'crypto'
 import mcData from 'minecraft-data'
 import { sanitize, revive } from './format.js'
-import {
-  writeVarInt,
-  writeVarLong,
-  EMPTY_ITEM_V4,
-  PKT_MOB_ARMOR_EQUIPMENT
-} from './packetPatch.js'
 
 /** Fits in 32-bit ids where needed */
 export const GHOST_RUNTIME_ID = 100000001
@@ -31,23 +25,17 @@ function asArmorRid (runtimeId) {
   return BigInt(Math.trunc(n))
 }
 
-/** Clear armor via RAW empty ItemV4 — client.write empties SizeOf-kick on 1.26. */
+/**
+ * Clear armor via client.write with empty items — the PROVEN-SAFE family
+ * (clearGhostHands does the same for mob_equipment on every session).
+ * The old RAW path concatenated EMPTY_ITEM_V4 (19-byte GamePE-era blob), but a
+ * vanilla client parses an empty item as a single 0x00 byte — the remaining
+ * ~90 bytes were trailing garbage and the client disconnected instantly.
+ * That was THE .me/.spec kick. Empty items don't re-encode anything real.
+ */
 function sendEmptyArmorRaw (client, runtimeId) {
   const rid = asArmorRid(runtimeId)
   if (rid == null) return
-  const buf = Buffer.concat([
-    writeVarInt(PKT_MOB_ARMOR_EQUIPMENT),
-    writeVarLong(rid),
-    EMPTY_ITEM_V4,
-    EMPTY_ITEM_V4,
-    EMPTY_ITEM_V4,
-    EMPTY_ITEM_V4,
-    EMPTY_ITEM_V4
-  ])
-  if (typeof client.sendBuffer === 'function') {
-    client.sendBuffer(buf, true)
-    return
-  }
   client.write('mob_armor_equipment', {
     runtime_entity_id: rid,
     helmet: emptyItem(),

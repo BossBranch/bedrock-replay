@@ -43,7 +43,7 @@ class MainActivity : AppCompatActivity() {
     private val pageOk = AtomicBoolean(false)
     private val probing = AtomicBoolean(false)
     private var attempt = 0
-    private var askedOverlay = false
+    private var hubStarted = false
     private var logoDataUri: String? = null
 
     inner class BsrBridge {
@@ -52,7 +52,10 @@ class MainActivity : AppCompatActivity() {
             handler.post {
                 OverlayService.setDismissed(this@MainActivity, false)
                 OverlayService.setStealth(this@MainActivity, false)
-                ensureOverlayPermissions()
+                if (!permissionsReady()) {
+                    promptMissingPermission()
+                    return@post
+                }
                 OverlayService.start(this@MainActivity)
             }
         }
@@ -82,12 +85,16 @@ class MainActivity : AppCompatActivity() {
                 } catch (_: Throwable) {}
             }
         }
+
+        @JavascriptInterface
+        fun openPermissionSettings() {
+            handler.post { promptMissingPermission() }
+        }
     }
 
     private fun logoUri(): String {
         logoDataUri?.let { return it }
         val uri = try {
-            // Foreground PNG only — mipmap adaptive icon decodes as a black plate + glyph.
             val bmp = BitmapFactory.decodeResource(resources, R.drawable.ic_launcher_fg)
             if (bmp != null) {
                 val out = ByteArrayOutputStream()
@@ -102,6 +109,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun uiEn(): Boolean = Locale.getDefault().language.equals("en", ignoreCase = true)
+
+    private fun permissionsReady(): Boolean =
+        Settings.canDrawOverlays(this) && MinecraftForeground.hasUsageAccess(this)
 
     private fun splashHtml(): String {
         val img = logoUri().let { if (it.isNotEmpty()) """<img class="logo" src="$it" alt=""/>""" else "" }
@@ -173,6 +183,60 @@ class MainActivity : AppCompatActivity() {
         """.trimIndent()
     }
 
+    private fun permissionsGateHtml(): String {
+        val img = logoUri().let { if (it.isNotEmpty()) """<img class="logo" src="$it" alt=""/>""" else "" }
+        val overlayOk = Settings.canDrawOverlays(this)
+        val usageOk = MinecraftForeground.hasUsageAccess(this)
+        val en = uiEn()
+        val title = if (en) "Permissions required" else "Нужны разрешения"
+        val body = if (en) {
+            "Turn on both settings, then return here. The app will not start until both are enabled."
+        } else {
+            "Включи обе плашки и вернись сюда. Приложение не запустится, пока не будут включены обе."
+        }
+        val oLabel = if (en) "Display over other apps" else "Поверх других окон"
+        val uLabel = if (en) "Usage access / statistics" else "Доступ к статистике использования"
+        val on = if (en) "ON" else "ВКЛ"
+        val off = if (en) "OFF — required" else "ВЫКЛ — нужно"
+        val oState = if (overlayOk) on else off
+        val uState = if (usageOk) on else off
+        val oColor = if (overlayOk) "#1a7f37" else "#b42318"
+        val uColor = if (usageOk) "#1a7f37" else "#b42318"
+        val btn = if (en) "Open next setting" else "Открыть следующую настройку"
+        return """
+            <html><head><meta charset="utf-8"/>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <style>
+              html,body{height:100%;margin:0}
+              body{
+                font-family:sans-serif;background:#e8e8ea;color:#1c1c1e;
+                display:flex;align-items:center;justify-content:center;
+                padding:40px 24px;text-align:center;box-sizing:border-box;
+              }
+              .wrap{max-width:360px}
+              .logo{width:88px;height:88px;object-fit:contain;margin:0 auto 14px;display:block}
+              h1{margin:0 0 12px;font-size:24px;font-weight:800}
+              p{margin:0 0 18px;font-size:16px;line-height:1.45;color:#3a3a3c}
+              .row{text-align:left;background:#fff;border-radius:12px;padding:12px 14px;margin:0 0 10px}
+              .row b{display:block;font-size:15px;margin-bottom:4px}
+              .row span{font-size:13px;font-weight:700}
+              button{
+                margin-top:16px;width:100%;border:0;border-radius:12px;padding:14px 16px;
+                background:#1c1c1e;color:#fff;font-size:16px;font-weight:700
+              }
+            </style></head><body>
+            <div class="wrap">
+              $img
+              <h1>$title</h1>
+              <p>$body</p>
+              <div class="row"><b>$oLabel</b><span style="color:$oColor">$oState</span></div>
+              <div class="row"><b>$uLabel</b><span style="color:$uColor">$uState</span></div>
+              <button onclick="BsrBridge.openPermissionSettings()">$btn</button>
+            </div>
+            </body></html>
+        """.trimIndent()
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -186,12 +250,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         requestNotifPermission()
-        try {
-            startHubService()
-        } catch (t: Throwable) {
-            Toast.makeText(this, "Service: ${t.message}", Toast.LENGTH_LONG).show()
-            t.printStackTrace()
-        }
 
         with(web.settings) {
             javaScriptEnabled = true
@@ -209,7 +267,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 if (isHubUiUrl(url)) {
                     pageOk.set(true)
-                    OverlayService.start(this@MainActivity)
+                    if (permissionsReady()) OverlayService.start(this@MainActivity)
                 }
             }
 
@@ -219,6 +277,7 @@ class MainActivity : AppCompatActivity() {
                 error: WebResourceError
             ) {
                 if (!request.isForMainFrame) return
+                if (!permissionsReady()) return
                 pageOk.set(false)
                 handler.post {
                     if (!isFinishing) showSplash()
@@ -234,6 +293,7 @@ class MainActivity : AppCompatActivity() {
                 failingUrl: String?
             ) {
                 if (!isHubUiUrl(failingUrl)) return
+                if (!permissionsReady()) return
                 pageOk.set(false)
                 handler.post {
                     if (!isFinishing) showSplash()
@@ -242,11 +302,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        showSplash()
-        scheduleProbe(800)
-
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                if (!permissionsReady()) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (uiEn()) "Enable both permissions first" else "Сначала включи оба разрешения",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return
+                }
                 if (web.canGoBack()) web.goBack()
                 else {
                     Toast.makeText(this@MainActivity, R.string.hint_bg, Toast.LENGTH_SHORT).show()
@@ -254,11 +319,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+
+        continueAfterPermissionCheck(promptIfNeeded = true)
     }
 
     override fun onResume() {
         super.onResume()
-        // Activity may be destroyed while HubService keeps Node alive.
+        continueAfterPermissionCheck(promptIfNeeded = false)
+        if (!permissionsReady()) return
         if (pageOk.get() && isHubUiUrl(web.url)) return
         if (pageOk.get()) return
         attempt = 0
@@ -273,6 +341,65 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
+    }
+
+    private fun continueAfterPermissionCheck(promptIfNeeded: Boolean) {
+        if (!permissionsReady()) {
+            showPermissionsGate()
+            if (promptIfNeeded) promptMissingPermission()
+            return
+        }
+        ensureHubStarted()
+        if (!pageOk.get() && !isHubUiUrl(web.url)) {
+            showSplash()
+            scheduleProbe(400)
+        }
+    }
+
+    private fun ensureHubStarted() {
+        if (hubStarted) return
+        hubStarted = true
+        try {
+            startHubService()
+        } catch (t: Throwable) {
+            hubStarted = false
+            Toast.makeText(this, "Service: ${t.message}", Toast.LENGTH_LONG).show()
+            t.printStackTrace()
+        }
+    }
+
+    private fun showPermissionsGate() {
+        web.loadDataWithBaseURL(null, permissionsGateHtml(), "text/html", "utf-8", null)
+    }
+
+    /** Open the first missing setting (overlay, then usage). */
+    private fun promptMissingPermission() {
+        if (!Settings.canDrawOverlays(this)) {
+            Toast.makeText(
+                this,
+                if (uiEn()) "Enable “Display over other apps”" else "Включи «поверх других окон»",
+                Toast.LENGTH_LONG
+            ).show()
+            try {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            } catch (_: Throwable) {}
+            return
+        }
+        if (!MinecraftForeground.hasUsageAccess(this)) {
+            Toast.makeText(
+                this,
+                if (uiEn()) "Enable usage access for this app" else "Включи доступ к статистике для этого приложения",
+                Toast.LENGTH_LONG
+            ).show()
+            try {
+                startActivity(MinecraftForeground.usageAccessIntent())
+            } catch (_: Throwable) {}
+        }
     }
 
     private fun isHubUiUrl(url: String?): Boolean {
@@ -290,34 +417,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scheduleProbe(delayMs: Long) {
+        if (!permissionsReady()) return
         handler.postDelayed({ probeAndLoad() }, delayMs)
     }
 
-    /**
-     * Probe HTTP API off the WebView. Keep trying until the hub UI actually paints
-     * (pageOk) — a single loadUrl was not enough when returning to a destroyed Activity.
-     */
     private fun probeAndLoad() {
+        if (!permissionsReady()) return
         if (pageOk.get() || isFinishing) return
         if (!probing.compareAndSet(false, true)) return
 
         thread(name = "bsr-ui-probe", isDaemon = true) {
             try {
-                while (!pageOk.get() && !isFinishing) {
+                while (!pageOk.get() && !isFinishing && permissionsReady()) {
                     attempt++
                     if (attempt > MAX_ATTEMPTS) {
                         handler.post {
-                            if (!isFinishing && !pageOk.get()) showFail()
+                            if (!isFinishing && !pageOk.get() && permissionsReady()) showFail()
                         }
                         return@thread
                     }
                     if (isHubReady()) {
                         handler.post {
-                            if (isFinishing || pageOk.get()) return@post
+                            if (isFinishing || pageOk.get() || !permissionsReady()) return@post
                             Log.i(TAG, "hub ready after $attempt probes — loading UI")
                             web.loadUrl(UI_URL)
                         }
-                        // Keep looping until onPageFinished sets pageOk (or timeout)
                         Thread.sleep(900L)
                         continue
                     }
@@ -364,37 +488,6 @@ class MainActivity : AppCompatActivity() {
             arrayOf(Manifest.permission.POST_NOTIFICATIONS),
             1001
         )
-    }
-
-    private fun ensureOverlayPermissions() {
-        if (askedOverlay) return
-        askedOverlay = true
-        if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(
-                this,
-                "Разреши «поверх других окон» для оверлея в Minecraft",
-                Toast.LENGTH_LONG
-            ).show()
-            try {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                )
-            } catch (_: Throwable) {}
-            return
-        }
-        if (!MinecraftForeground.hasUsageAccess(this)) {
-            Toast.makeText(
-                this,
-                "Включи доступ к Usage — оверлей только поверх Minecraft",
-                Toast.LENGTH_LONG
-            ).show()
-            try {
-                startActivity(MinecraftForeground.usageAccessIntent())
-            } catch (_: Throwable) {}
-        }
     }
 
     companion object {

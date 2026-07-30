@@ -6,14 +6,17 @@ import { resolveRuntimeVersion, applyBedrockVersionCompat } from './version.js'
 import { ReplayWriter, sanitize, revive } from './format.js'
 import { writeReplayMeta, replayMetaPath } from './replayStream.js'
 
-import { buildSelfRecord } from './ghost.js'
+import { buildSelfRecord, skinFromLogin } from './ghost.js'
 import { liveAddress, playAddress, liveMotdOptions } from './transfer.js'
-import { fixPlayerListParams, fixActorIds, asUniqueId } from './packetFix.js'
+import { fixPlayerListParams, fixActorIds, asUniqueId, fixSkin } from './packetFix.js'
 import {
   inventoryArmorToMobArmor,
+  inventorySlotArmorToMobArmor,
   peekInventoryWindowId,
   PKT_INVENTORY_CONTENT,
-  WIN_ARMOR
+  PKT_INVENTORY_SLOT,
+  WIN_ARMOR,
+  EMPTY_ITEM_V4
 } from './packetPatch.js'
 import { createLiveDiag } from './liveDiag.js'
 
@@ -677,6 +680,14 @@ export async function startRecord (opts = {}) {
   let lastHeldRawMain = null
   let lastHeldRawOff = null
   let lastArmorRaw = null
+  /** Mutable 5-slot ItemV4 kit built from inventory_slot(window=armor). */
+  const armorKitItems = [
+    Buffer.from(EMPTY_ITEM_V4),
+    Buffer.from(EMPTY_ITEM_V4),
+    Buffer.from(EMPTY_ITEM_V4),
+    Buffer.from(EMPTY_ITEM_V4),
+    Buffer.from(EMPTY_ITEM_V4)
+  ]
   /** Local runtime id from start_game — for self armor RAW capture */
   let localRuntimeId = null
   /** Debug: which serverbound names we saw while recording (held pipeline) */
@@ -1154,6 +1165,24 @@ export async function startRecord (opts = {}) {
       // Current hotbar/armor from before .start (JSON held never saw these)
       flushCachedEquipRaw()
     }
+    // Mid-session .start: login/join/1.5s captureSelf already ran while !recording.
+    // Write self now or ghost falls back to login/Steve on PLAY.
+    try {
+      if (livePlayer) {
+        const self = buildSelfRecord(livePlayer)
+        if (self?.skin) {
+          writer.self(self)
+          console.log(
+            `[record] Self identity: ${self.name} skin=yes bytes=` +
+              `${self.skin?.skin_data?.$bytes?.length || self.skin?.skin_data?.data?.length || '?'}`
+          )
+        } else {
+          console.warn('[record] Self skin not ready at .start — ghost may use login skin')
+        }
+      }
+    } catch (e) {
+      console.warn('[record] self capture at start failed', e.message)
+    }
     console.log(`[record] STARTED → ${filePath}`)
     return writer
   }
@@ -1377,7 +1406,37 @@ export async function startRecord (opts = {}) {
     }
 
     const client = new Client(options)
-    if (!client.noLoginForward) client.options.skinData = ds.skinData
+    // Forward client skin; mark trusted so local/third-party viewers accept custom PNGs
+    if (!client.noLoginForward && ds.skinData) {
+      client.options.skinData = {
+        ...ds.skinData,
+        TrustedSkin: true,
+        OverrideSkin: true
+      }
+    }
+
+    // Offline upstream normally gets uuidFrom(username) — that ≠ the Minecraft
+    // client's real identity UUID. Server then advertises skin on the wrong UUID,
+    // so others see you but local F5/body stays Steve (bedrock-protocol#438).
+    // Align identity BEFORE sendLogin (session → _connect).
+    client.on('session', () => {
+      try {
+        if (ds.profile?.uuid) client.profile.uuid = ds.profile.uuid
+        if (ds.profile?.xuid != null && ds.profile.xuid !== '') {
+          client.profile.xuid = ds.profile.xuid
+        }
+        if (ds.profile?.name) {
+          client.profile.name = ds.profile.name
+          client.username = ds.profile.name
+        }
+        console.log(
+          `[record] upstream identity aligned uuid=${client.profile?.uuid} ` +
+          `xuid=${client.profile?.xuid || 0} name=${client.username}`
+        )
+      } catch (e) {
+        console.warn('[record] upstream identity align failed', e?.message || e)
+      }
+    })
 
     // Attach listeners BEFORE connect — jsp-raknet can fail immediately
     client.outLog = ds.upOutLog
@@ -1466,6 +1525,62 @@ export async function startRecord (opts = {}) {
   console.log(`[record] LIVE ${advHost}:${advPort}  |  PLAY ${playHint.host}:${playHint.port}`)
   console.log(`[record] followTransfers=${followTransfers} recordChat=${recordChat}`)
   console.log('[record] Chat: .start / .stop / .play / .replays / .help')
+
+  /** Push own skin onto the local client (offline-relay self-view fix). */
+  const refreshLocalSkin = (player) => {
+    if (!player || player.status === 'disconnected') return false
+    const skin = fixSkin(skinFromLogin(player.skinData))
+    if (!skin?.skin_data?.data?.length) return false
+    const uuid = player.profile?.uuid
+    if (!uuid) return false
+    const name = player.profile?.name || player.username || 'Player'
+    const uid = asUniqueId(
+      player.entityId ??
+      cachedStartGame?.runtime_entity_id ??
+      cachedStartGame?.runtime_id ??
+      1n
+    )
+    try {
+      player.write('player_list', fixPlayerListParams({
+        records: {
+          type: 'add',
+          records: [{
+            uuid,
+            entity_unique_id: uid,
+            username: name,
+            xbox_user_id: String(player.profile?.xuid || '0'),
+            platform_chat_id: '',
+            build_platform: 7,
+            skin_data: skin,
+            is_teacher: false,
+            is_host: false,
+            is_subclient: false,
+            player_color: -1
+          }],
+          verified: [true]
+        }
+      }))
+    } catch (e) {
+      console.warn('[record] local player_list skin:', e.message)
+    }
+    try {
+      player.write('player_skin', {
+        uuid,
+        skin,
+        skin_name: name,
+        old_skin_name: '',
+        is_verified: true
+      })
+      console.log(
+        `[record] local skin refresh uuid=${uuid} ` +
+        `bytes=${skin.skin_data.data.length} arm=${skin.arm_size}`
+      )
+      return true
+    } catch (e) {
+      console.warn('[record] local player_skin:', e.message)
+      return false
+    }
+  }
 
   relay.on('connect', (player) => {
     console.log(`[record] Client connected ${player.connection?.address}`)
@@ -1659,6 +1774,31 @@ export async function startRecord (opts = {}) {
             }
           }
         }
+        // Mid-fight armor updates are often inventory_slot, not a full content dump.
+        if (
+          packetId === PKT_INVENTORY_SLOT &&
+          peekInventoryWindowId(buf) === WIN_ARMOR
+        ) {
+          const built = inventorySlotArmorToMobArmor(buf, 1n, armorKitItems)
+          if (built?.length) {
+            lastArmorRaw = built
+            if (recording && writer) {
+              try {
+                writer.heldRaw(built, {
+                  n: 'mob_armor_equipment',
+                  p: { src: 'inventory_slot_armor' }
+                })
+                heldRawWritten++
+                heldEventsWritten++
+                if (heldRawWritten <= 5 || heldRawWritten % 20 === 0) {
+                  console.log(`[record] heldRaw armor-slot #${heldRawWritten} len=${built.length}`)
+                }
+              } catch (e) {
+                console.warn('[record] heldRaw armor-slot failed', e.message)
+              }
+            }
+          }
+        }
         if (!recording || !writer) return
         if (player._skipRecordUntil && Date.now() < player._skipRecordUntil) return
         writer.rawClientbound(buf)
@@ -1770,6 +1910,9 @@ export async function startRecord (opts = {}) {
           player._allowRawEnt = true
           player._joinSpawned = true
           console.log('[record] join spawn OK — RAW_ENT enabled')
+          // Offline-relay local skin fix: re-assert own appearance on the client UUID
+          try { refreshLocalSkin(player) } catch {}
+          setTimeout(() => { try { refreshLocalSkin(player) } catch {} }, 800)
         }
         try { player._tick?.() } catch {}
       }
@@ -1804,6 +1947,32 @@ export async function startRecord (opts = {}) {
               }
             } catch (e) {
               console.warn('[record] heldRaw armor failed', e.message)
+            }
+          }
+        }
+      }
+      // PC: armor often arrives as inventory_slot — fold into RAW kit for ghost.
+      if (
+        name === 'inventory_slot' &&
+        des?.fullBuffer?.length &&
+        (params?.window_id === 'armor' || params?.window_id === 120 || params?.window_id === '120')
+      ) {
+        const built = inventorySlotArmorToMobArmor(des.fullBuffer, 1n, armorKitItems)
+        if (built?.length) {
+          lastArmorRaw = built
+          if (recording && writer) {
+            try {
+              writer.heldRaw(built, {
+                n: 'mob_armor_equipment',
+                p: { src: 'inventory_slot_armor' }
+              })
+              heldRawWritten++
+              heldEventsWritten++
+              if (heldRawWritten <= 3 || heldRawWritten % 20 === 0) {
+                console.log(`[record] heldRaw armor-slot #${heldRawWritten} len=${built.length}`)
+              }
+            } catch (e) {
+              console.warn('[record] heldRaw armor-slot failed', e.message)
             }
           }
         }

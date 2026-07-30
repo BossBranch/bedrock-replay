@@ -134,6 +134,28 @@ async function patchConfig (partial) {
   return loadConfig(configPath())
 }
 
+async function stopHub () {
+  if (!hubApi) return
+  const api = hubApi
+  hubApi = null
+  lastError = null
+  try {
+    const shut = api.shutdown ? api.shutdown() : Promise.resolve()
+    await Promise.race([
+      shut,
+      new Promise((resolve) => setTimeout(resolve, 6000))
+    ])
+  } catch (e) {
+    pushLog('[mobile] stop warn: ' + (e?.message || e))
+  }
+  try {
+    const { invalidateReplayListCache } = await loadConfigMod()
+    invalidateReplayListCache?.()
+  } catch {}
+  await new Promise((r) => setTimeout(r, 300))
+  pushLog('[mobile] hub stopped')
+}
+
 async function ensureHub () {
   if (hubApi) return hubApi
   if (hubStarting) {
@@ -151,9 +173,21 @@ async function ensureHub () {
     pushLog('[mobile] loading hub module…')
     const { startHub } = await import('./hub.js')
     pushLog('[mobile] starting hub…')
-    hubApi = await startHub({ mode: 'both' })
-    pushLog('[mobile] hub running')
-    return hubApi
+    let lastErr = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        hubApi = await startHub({ mode: 'both' })
+        pushLog('[mobile] hub running')
+        return hubApi
+      } catch (e) {
+        lastErr = e
+        const msg = String(e?.message || e)
+        pushLog(`[mobile] hub start attempt ${attempt} failed: ${msg}`)
+        if (!/EADDRINUSE|address already in use/i.test(msg) || attempt === 3) break
+        await new Promise((r) => setTimeout(r, 500 * attempt))
+      }
+    }
+    throw lastErr || new Error('hub start failed')
   } catch (e) {
     lastError = e?.message || String(e)
     pushLog('[mobile] hub failed: ' + lastError)
@@ -161,19 +195,6 @@ async function ensureHub () {
   } finally {
     hubStarting = false
   }
-}
-
-async function stopHub () {
-  if (!hubApi) return
-  const api = hubApi
-  hubApi = null
-  lastError = null
-  try {
-    if (api.shutdown) await api.shutdown()
-  } catch (e) {
-    pushLog('[mobile] stop warn: ' + (e?.message || e))
-  }
-  pushLog('[mobile] hub stopped')
 }
 
 function mimeFor (file) {
@@ -313,27 +334,51 @@ async function handleApi (req, res) {
   }
   if (req.method === 'POST' && url === '/api/stop') {
     try {
-      await stopHub()
+      // Never let Stop hang the UI: hard ceiling, then answer.
+      await Promise.race([
+        stopHub(),
+        new Promise((resolve) => setTimeout(resolve, 3500))
+      ])
       return sendJson(res, 200, { ok: true, running: false })
     } catch (e) {
-      return sendJson(res, 500, { ok: false, error: e.message })
+      hubApi = null
+      return sendJson(res, 200, { ok: true, running: false, warn: e.message })
     }
   }
   if (req.method === 'GET' && url === '/api/replays') {
     try {
       const { loadConfig, listReplays } = await loadConfigMod()
-      const { readReplayMeta } = await import('./replayStream.js')
+      const { readReplayMeta, writeReplayMeta } = await import('./replayStream.js')
+      const { peekReplayHeader } = await import('./format.js')
       const cfg = loadConfig(configPath())
-      const list = listReplays(cfg.replaysDir).map((r) => {
+      const list = await Promise.all(listReplays(cfg.replaysDir, { fresh: true, probe: true }).map(async (r) => {
         const meta = readReplayMeta(r.path)
+        let version = meta?.version ? String(meta.version) : null
+        // Old debug builds: .meta.json missing or without version — peek gz header
+        if (!version) {
+          try {
+            const header = await peekReplayHeader(r.path)
+            if (header?.version) {
+              version = String(header.version)
+              try {
+                writeReplayMeta(r.path, {
+                  ...(meta && typeof meta === 'object' ? meta : {}),
+                  version,
+                  durationMs: meta?.durationMs ?? header.durationMs,
+                  packets: meta?.packets ?? header.packets
+                })
+              } catch {}
+            }
+          } catch {}
+        }
         return {
           name: r.name,
           size: r.size,
           mtime: r.mtime instanceof Date ? r.mtime.toISOString() : String(r.mtime),
-          version: meta?.version ? String(meta.version) : null,
+          version,
           durationMs: typeof meta?.durationMs === 'number' ? meta.durationMs : null
         }
-      })
+      }))
       return sendJson(res, 200, {
         dir: cfg.replaysDir,
         replays: list

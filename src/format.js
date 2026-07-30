@@ -235,6 +235,32 @@ export class ReplayWriter {
 }
 
 /**
+ * Read only the first JSON line (header) — for UI version labels when .meta.json is missing.
+ * Old debug recordings often have version in the gz header but no sidecar.
+ */
+export async function peekReplayHeader (filePath) {
+  const stream = filePath.endsWith('.gz')
+    ? fs.createReadStream(filePath).pipe(createGunzip())
+    : fs.createReadStream(filePath)
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
+  try {
+    for await (const line of rl) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      try {
+        const row = revive(JSON.parse(trimmed))
+        if (row?.type === 'header') return row
+      } catch {}
+      return null
+    }
+  } finally {
+    try { rl.close() } catch {}
+    try { stream.destroy?.() } catch {}
+  }
+  return null
+}
+
+/**
  * Read a replay file. Yields revived objects in order.
  * Supports .mcreplay.gz and plain .mcreplay
  */

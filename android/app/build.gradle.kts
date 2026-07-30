@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -11,8 +13,8 @@ android {
         applicationId = "ru.bedrock.serverreplay"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1100
-        versionName = "1.1.0"
+        versionCode = 1104
+        versionName = "1.1.3"
         ndkVersion = "27.0.12077973"
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
@@ -30,9 +32,8 @@ android {
             val propsFile = rootProject.file("keystore.properties")
             val store = rootProject.file("release.keystore")
             if (propsFile.exists() && store.exists()) {
-                val props = java.util.Properties().apply {
-                    propsFile.inputStream().use { load(it) }
-                }
+                val props = Properties()
+                propsFile.inputStream().use { props.load(it) }
                 storeFile = store
                 storePassword = props.getProperty("storePassword")
                 keyAlias = props.getProperty("keyAlias")

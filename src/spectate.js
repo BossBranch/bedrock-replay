@@ -45,6 +45,7 @@ export class SpectateController {
    *   setEntityVisible?: Function,
    *   onWatchStart?: Function,
    *   onWatchEnd?: Function,
+   *   onMeEnterBegin?: Function,
    *   onMeEquipHeld?: Function,
    *   onMePathApply?: Function,
    *   onMePathReset?: Function
@@ -67,6 +68,7 @@ export class SpectateController {
     this.setEntityVisible = hooks.setEntityVisible || (() => {})
     this.onWatchStart = hooks.onWatchStart || (() => {})
     this.onWatchEnd = hooks.onWatchEnd || (() => {})
+    this.onMeEnterBegin = hooks.onMeEnterBegin || (() => {})
     this.onMeEquipHeld = hooks.onMeEquipHeld || (() => {})
     this.onMePathApply = hooks.onMePathApply || (() => {})
     this.onMePathReset = hooks.onMePathReset || (() => {})
@@ -200,17 +202,16 @@ export class SpectateController {
 
   _activateMe () {
     this._meActive = true
+    // onMePathApply equips the FPV hand itself — no extra onMeEquipHeld here,
+    // doubled player_hotbar was part of the enter burst that kicked clients.
     try { this.onMePathApply(this.mePathId) } catch {}
-    if (this.mePathId > 0) {
-      try { this.onMeEquipHeld() } catch {}
-    }
   }
 
   _deactivateMe () {
-    if (!this._meActive) {
-      try { this.onMePathReset() } catch {}
-      return
-    }
+    // No-op when .me was never active: firing the reset burst (camera clear +
+    // gamemode re-flip) on a plain `.spec nick` from freecam kicks real
+    // clients on busy worlds — the client is already in viewer mode.
+    if (!this._meActive) return
     this._meActive = false
     try { this.onMePathReset() } catch {}
   }
@@ -391,13 +392,18 @@ export class SpectateController {
   clearFollowOnly () {
     const wasFollow = this.mode === 'follow'
     const wasMe = wasFollow && this.getTargetEntity()?.isGhost
+    // Pause the replay BEFORE the leave burst (unhide + reset) — flips during
+    // the packet stream crash real clients on busy worlds.
+    if (wasMe) {
+      try { this.onMeEnterBegin() } catch {}
+    }
     this.mode = 'free'
     this.targetKey = null
     this._stopLoop()
     this._clearTargetHide()
     if (wasMe) this._deactivateMe()
     if (wasFollow) {
-      try { this.onWatchEnd() } catch {}
+      try { this.onWatchEnd({ wasMe }) } catch {}
     }
   }
 
@@ -415,9 +421,12 @@ export class SpectateController {
     }
 
     const prev = this.getTargetEntity()
-    if (prev?.isGhost && !ent.isGhost) this._deactivateMe()
-    else if (this.mode === 'follow' && !ent.isGhost) {
-      try { this.onWatchEnd() } catch {}
+    if (prev?.isGhost && !ent.isGhost) {
+      // .me → .spec other: pause before the leave flip, same as .free
+      try { this.onMeEnterBegin() } catch {}
+      this._deactivateMe()
+    } else if (this.mode === 'follow' && !ent.isGhost) {
+      try { this.onWatchEnd({ wasMe: false }) } catch {}
     }
 
     this.mode = 'follow'
@@ -425,6 +434,8 @@ export class SpectateController {
     this.cam = null
 
     if (ent.isGhost) {
+      // Pause replay before the enter burst (hide + hardReset + adventure)
+      try { this.onMeEnterBegin() } catch {}
       this._applyFollowHide(ent)
       try { this.onWatchStart() } catch {}
       this._activateMe()

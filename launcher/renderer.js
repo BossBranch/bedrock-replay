@@ -38,9 +38,9 @@ const I18N = {
   ru: {
     tagReplay: 'Replay для серверов',
     statusOff: 'Остановлен',
-    statusOn: 'REC · работает',
-    liveLabel: 'LIVE · запись на сервере',
-    playLabel: 'PLAY · просмотр',
+    statusOn: 'REC — работает',
+    liveLabel: 'LIVE — запись на сервере',
+    playLabel: 'PLAY — просмотр',
     addrIp: 'IP:',
     addrPort: 'Порт:',
     copied: 'Скопировано',
@@ -65,7 +65,7 @@ const I18N = {
     labelHost: 'Хост',
     labelPort: 'Порт',
     labelVersion: 'Версия клиента',
-    hintVersion: 'От 1.19.50 · ниже (с 1.16.201) — в расширенном списке',
+    hintVersion: 'От 1.19.50 — ниже (с 1.16.201) — в расширенном списке',
     hintVersionAdjacent: 'На этой версии возможны ошибки',
     hintVersionNoPossess: 'На этой версии возможны ошибки. Вселение и режим спектатора не работают',
     optVersionExtended: 'Расширенный список',
@@ -87,7 +87,7 @@ const I18N = {
     optHotbarTipAria: 'Подсказка по горячим клавишам',
     optHotbarTipLead: 'Нажимайте эти клавиши в режиме просмотра, чтобы управлять записью.',
     optHotbarTipAlt: 'Клавиши 1–8 на клавиатуре',
-    optHotbarTipMap: '1 пауза · 2–4 скорость · 5/6 перемотка · 7 след. игрок · 8 рестарт',
+    optHotbarTipMap: '1 пауза — 2–4 скорость — 5/6 перемотка — 7 след. игрок — 8 рестарт',
     optAutoRecord: 'Автозапись',
     optAutoRecordHint: 'Начинает писать сразу при входе на LIVE, без команды .start',
     optSaveDisconnect: 'Сохранять при выходе',
@@ -105,8 +105,8 @@ const I18N = {
     panelLog: 'Лог',
     btnClearLog: 'Очистить',
     cmdTitle: 'Команды чата',
-    cmdLiveTitle: 'LIVE · запись',
-    cmdPlayTitle: 'PLAY · просмотр',
+    cmdLiveTitle: 'LIVE — запись',
+    cmdPlayTitle: 'PLAY — просмотр',
     cmdStart: 'Начать запись',
     cmdStop: 'Остановить и сохранить',
     cmdPlay: 'Открыть последний реплей (или .play имя)',
@@ -129,7 +129,7 @@ const I18N = {
     langToEn: 'English',
     langToRu: 'Русский',
     saveError: 'Ошибка',
-    savedRestart: 'Сохранено · перезапуск…',
+    savedRestart: 'Сохранено — перезапуск…',
     saved: 'Сохранено',
     labelServer: 'Сервер',
     labelOpts: 'Параметры',
@@ -155,9 +155,9 @@ const I18N = {
   en: {
     tagReplay: 'Server replay tool',
     statusOff: 'Stopped',
-    statusOn: 'REC · running',
-    liveLabel: 'LIVE · record on server',
-    playLabel: 'PLAY · watch',
+    statusOn: 'REC — running',
+    liveLabel: 'LIVE — record on server',
+    playLabel: 'PLAY — watch',
     addrIp: 'IP:',
     addrPort: 'Port:',
     copied: 'Copied',
@@ -182,7 +182,7 @@ const I18N = {
     labelHost: 'Host',
     labelPort: 'Port',
     labelVersion: 'Client version',
-    hintVersion: 'From 1.19.50 · older (from 1.16.201) in extended list',
+    hintVersion: 'From 1.19.50 — older (from 1.16.201) in extended list',
     hintVersionAdjacent: 'This version may have errors',
     hintVersionNoPossess: 'This version may have errors. Possess and spectator mode are unavailable',
     optVersionExtended: 'Extended list',
@@ -204,7 +204,7 @@ const I18N = {
     optHotbarTipAria: 'Hotkeys tip',
     optHotbarTipLead: 'Press these keys in playback to control the recording.',
     optHotbarTipAlt: 'Keys 1–8 on the keyboard',
-    optHotbarTipMap: '1 pause · 2–4 speed · 5/6 seek · 7 next player · 8 restart',
+    optHotbarTipMap: '1 pause — 2–4 speed — 5/6 seek — 7 next player — 8 restart',
     optAutoRecord: 'Auto-record',
     optAutoRecordHint: 'Starts recording as soon as you join LIVE, without .start',
     optSaveDisconnect: 'Save on disconnect',
@@ -222,8 +222,8 @@ const I18N = {
     panelLog: 'Log',
     btnClearLog: 'Clear',
     cmdTitle: 'Chat commands',
-    cmdLiveTitle: 'LIVE · record',
-    cmdPlayTitle: 'PLAY · watch',
+    cmdLiveTitle: 'LIVE — record',
+    cmdPlayTitle: 'PLAY — watch',
     cmdStart: 'Start recording',
     cmdStop: 'Stop and save',
     cmdPlay: 'Open last replay (or .play name)',
@@ -246,7 +246,7 @@ const I18N = {
     langToEn: 'English',
     langToRu: 'Русский',
     saveError: 'Error',
-    savedRestart: 'Saved · restarting…',
+    savedRestart: 'Saved — restarting…',
     saved: 'Saved',
     labelServer: 'Server',
     labelOpts: 'Options',
@@ -875,7 +875,7 @@ function setVersionValue (v) {
   }
   {
     const hintKey = versionWarnHintKey(v)
-    versionBtn.title = hintKey ? `${v} · ${t(hintKey)}` : (v || '')
+    versionBtn.title = hintKey ? `${v} — ${t(hintKey)}` : (v || '')
   }
   syncVersionWarnHint(v)
   if (!suppressDirty) updateSaveBtns()
@@ -957,7 +957,7 @@ function fillVersions (versionsOrEntries, selected, entriesFromMain) {
       const hintKey = e.noPossess
         ? 'hintVersionNoPossess'
         : (!e.stable ? 'hintVersionAdjacent' : null)
-      li.title = hintKey ? `${e.value} · ${t(hintKey)}` : e.value
+      li.title = hintKey ? `${e.value} — ${t(hintKey)}` : e.value
     }
     li.addEventListener('click', (ev) => {
       ev.preventDefault()
@@ -1089,7 +1089,7 @@ function renderReplays (list) {
     const verText = r.version ? `v${r.version}` : (uiLang === 'en' ? 'version ?' : 'версия ?')
     const durText = fmtDuration(r.durationMs)
     const dateText = fmtReplayDate(r.mtime)
-    sub.textContent = `${verText} · ${durText} · ${dateText}`
+    sub.textContent = `${verText} — ${durText} — ${dateText}`
     left.append(name, sub)
 
     const meta = document.createElement('span')
@@ -1294,11 +1294,10 @@ async function refresh () {
   const state = await window.api.getState()
   if (state.uiPrefs) applyUiPrefs(state.uiPrefs, { persist: false })
   setRunning(!!state.running, state.activeBase || null)
-  const support = syncSupportRange(state)
   if (state.appVersion) {
     const el = $('appVersion')
     if (el) el.textContent = `v${state.appVersion}`
-    try { document.title = `Bedrock Server Replay v${state.appVersion} · ${support}` } catch {}
+    try { document.title = `Bedrock Server Replay v${state.appVersion}` } catch {}
   }
   if (state.configError) {
     logLine(`[launcher] config error: ${state.configError}`)
@@ -1384,7 +1383,7 @@ window.api.onPlay(async (s) => {
 })
 
 refresh().then((state) => {
-  logLine(`[launcher] Bedrock Server Replay · ${state.root}`)
+  logLine(`[launcher] Bedrock Server Replay — ${state.root}`)
   const nStable = state.versions?.length || 0
   const nExt = state.versionEntries?.length || nStable
   logLine(`[launcher] ${t('logVersions')}: ${nStable} stable / ${nExt} extended ${t('logFromVersion')}`)

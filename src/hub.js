@@ -94,14 +94,25 @@ export async function startHub (opts = {}) {
   const isMobile = process.env.BEDROCK_REPLAY_MOBILE === '1'
   const shutdown = async () => {
     console.log('\n[hub] Shutting down…')
-    try { await recordApi?.closeWriter?.('shutdown') } catch {}
-    // Drop Minecraft clients + GamePE upstream with disconnect (not bare close),
-    // otherwise GamePE keeps the nick online until UDP timeout.
-    try { recordApi?.relay?.close?.() } catch {}
-    try { playApi?.close?.({ exitProcess: false }) } catch {}
-    // Give disconnect packets a moment to leave before process exit (PC).
-    await new Promise((r) => setTimeout(r, 250))
-    // Android UI shares this Node process — never exit on stop
+    const work = async () => {
+      try { await recordApi?.closeWriter?.('shutdown') } catch {}
+      try {
+        const clients = recordApi?.relay?.players || recordApi?.relay?._players
+        if (clients && typeof clients.values === 'function') {
+          for (const p of clients.values()) {
+            try { p.disconnect?.('Hub stopped') } catch {}
+            try { p.close?.() } catch {}
+          }
+        }
+      } catch {}
+      try { recordApi?.relay?.close?.() } catch {}
+      try { playApi?.close?.({ exitProcess: false }) } catch {}
+    }
+    await Promise.race([
+      work(),
+      new Promise((r) => setTimeout(r, isMobile ? 5000 : 2000))
+    ])
+    await new Promise((r) => setTimeout(r, isMobile ? 200 : 250))
     if (isMobile) return
     process.exit(0)
   }

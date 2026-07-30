@@ -322,30 +322,15 @@ export class ReplayTransport {
     this.onAfterSeek({ resetCamera: !!this._resetCamera })
   }
 
-  /** Bedrock kicks idle spectators — trickle CB packets while paused / at end. */
-  _sendKeepalive () {
-    const c = this.client
-    if (!c || c.status === 0) return
-    try {
-      c.queue?.('network_stack_latency', {
-        timestamp: Date.now(),
-        from_server: true
-      })
-    } catch {}
-    try {
-      const t = Date.now()
-      c.queue?.('tick_sync', { request_time: t, response_time: t })
-    } catch {}
-  }
+  // NO app-level keepalive while paused. The old one queued unsolicited
+  // network_stack_latency + tick_sync with Date.now() timestamps — a known
+  // Bedrock client crasher. It fired on the FIRST pause tick, so every
+  // .me/.free/.spec (pause envelope) killed the real client instantly while
+  // headless bots survived. RakNet's own ping keeps the connection alive,
+  // and the spectator loop keeps streaming move_player during pauses.
 
   async _waitWhile (pred, intervalMs) {
-    let lastKa = 0
     while (pred() && !this._aborted && this.client.status !== 0) {
-      const now = Date.now()
-      if (now - lastKa > 2000) {
-        lastKa = now
-        this._sendKeepalive()
-      }
       await sleep(intervalMs)
     }
   }

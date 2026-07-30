@@ -1,11 +1,21 @@
 async function api (path, opts) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || res.statusText)
-  return data
+  const timeoutMs = opts?.timeoutMs
+  const { timeoutMs: _drop, ...fetchOpts } = opts || {}
+  const ctrl = typeof timeoutMs === 'number' ? new AbortController() : null
+  let timer = null
+  if (ctrl) timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(path, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: ctrl?.signal,
+      ...fetchOpts
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || res.statusText)
+    return data
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 const $ = (id) => document.getElementById(id)
@@ -20,7 +30,7 @@ const I18N = {
     statusStopping: 'Остановка…',
     statusError: 'Ошибка',
     statusOffline: 'Нет связи',
-    joinHint: 'В Minecraft: <strong class="mono">127.0.0.1:19132</strong> · <strong class="mono">:19133</strong>',
+    joinHint: 'В Minecraft: <strong class="mono">127.0.0.1:19132</strong> / <strong class="mono">:19133</strong>',
     serverTitle: 'Целевой сервер',
     labelHost: 'Хост',
     labelPort: 'Порт',
@@ -58,7 +68,7 @@ const I18N = {
     statusStopping: 'Stopping…',
     statusError: 'Error',
     statusOffline: 'Offline',
-    joinHint: 'In Minecraft: <strong class="mono">127.0.0.1:19132</strong> · <strong class="mono">:19133</strong>',
+    joinHint: 'In Minecraft: <strong class="mono">127.0.0.1:19132</strong> / <strong class="mono">:19133</strong>',
     serverTitle: 'Target server',
     labelHost: 'Host',
     labelPort: 'Port',
@@ -643,18 +653,29 @@ $('btnStart').onclick = async () => {
 }
 
 $('btnStop').onclick = async () => {
+  const btn = $('btnStop')
+  if (btn.dataset.busy === '1') return
+  btn.dataset.busy = '1'
+  btn.disabled = true
+  setPill('busy', t('statusStopping'))
+  document.body.classList.remove('hub-running')
   try {
-    $('btnStop').disabled = true
-    await api('/api/stop', { method: 'POST', body: '{}' })
-    setPill('off', t('statusOff'))
+    await api('/api/stop', { method: 'POST', body: '{}', timeoutMs: 8000 })
+  } catch (e) {
+    const msg = String(e?.message || e)
+    if (!/abort|AbortError/i.test(msg)) {
+      try { alert(msg) } catch {}
+    }
+  } finally {
+    btn.disabled = false
+    btn.dataset.busy = '0'
+  }
+  try {
     setNowPlaying(null)
+    markActiveReplayRows()
     await refreshStatus()
     await loadReplays()
-  } catch (e) {
-    alert(e.message)
-  } finally {
-    $('btnStop').disabled = false
-  }
+  } catch {}
 }
 
 $('btnRefreshReplays').onclick = () => { loadReplays().catch(() => {}) }

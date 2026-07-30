@@ -278,7 +278,7 @@ function noteLanStatusChange (lan) {
     if (!lan.ok) {
       appendLog('[launcher] Нет локальной сети (Wi‑Fi/LAN выключен?) — со смартфона сейчас не подключиться')
     } else {
-      appendLog(`[launcher] Локальная сеть снова есть · LAN IP: ${lan.ip}`)
+      appendLog(`[launcher] Локальная сеть снова есть — LAN IP: ${lan.ip}`)
     }
   } catch {}
 }

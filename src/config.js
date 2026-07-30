@@ -60,11 +60,11 @@ export function loadConfig (configPath = path.join(DATA_ROOT, 'config.json')) {
   }
   const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
   cfg.profilesFolder = path.resolve(DATA_ROOT, cfg.profilesFolder || './auth_cache')
-  // Durable Android path survives uninstall (Documents/BedrockServerReplay/replays)
+  // Mobile: always use sandbox path from Android (never public Documents — EACCES in Node)
   if (process.env.BEDROCK_REPLAY_REPLAYS) {
     cfg.replaysDir = path.resolve(process.env.BEDROCK_REPLAY_REPLAYS)
   } else {
-    cfg.replaysDir = path.resolve(DATA_ROOT, cfg.replaysDir || './replays')
+    cfg.replaysDir = path.resolve(DATA_ROOT, 'replays')
   }
   const backend = resolveRaknetBackend(cfg)
   if (backend) cfg.raknetBackend = backend
@@ -150,9 +150,14 @@ export function uniqueReplayPath (dir, basename) {
   return path.join(dir, `${base}_${Date.now()}.mcreplay.gz`)
 }
 
-/** Index path — survives FUSE readdir gaps on Android Documents. */
+/** Index path — survives FUSE readdir gaps on Android. */
 export function replayIndexPath () {
   return path.join(DATA_ROOT, 'replay-index.json')
+}
+
+function isPublicDocumentsPath (p) {
+  const s = String(p || '').replace(/\\/g, '/').toLowerCase()
+  return /\/documents\/bedrockserverreplay\b/.test(s)
 }
 
 /**
@@ -163,6 +168,7 @@ export function registerReplay (filePath) {
   try {
     const abs = path.resolve(String(filePath || ''))
     if (!abs || !fs.existsSync(abs)) return false
+    if (process.env.BEDROCK_REPLAY_MOBILE === '1' && isPublicDocumentsPath(abs)) return false
     const name = path.basename(abs)
     if (!name.endsWith('.mcreplay') && !name.endsWith('.mcreplay.gz')) return false
     try { fs.chmodSync(abs, 0o666) } catch {}
@@ -177,7 +183,7 @@ export function registerReplay (filePath) {
         if (Array.isArray(raw)) arr = raw
       }
     } catch {}
-    arr = arr.filter((x) => x && x.name !== name && x.path !== abs)
+    arr = arr.filter((x) => x && x.name !== name && x.path !== abs && !isPublicDocumentsPath(x?.path))
     arr.unshift({ name, path: abs, registeredAt: new Date().toISOString() })
     if (arr.length > 200) arr = arr.slice(0, 200)
     fs.mkdirSync(path.dirname(idxPath), { recursive: true })
@@ -191,6 +197,7 @@ export function registerReplay (filePath) {
 }
 
 let _listCache = { dir: '', t: 0, list: null }
+const _readdirWarned = new Set()
 
 /** Invalidate after save/delete/rename so UI sees new files without waiting for TTL. */
 export function invalidateReplayListCache () {
@@ -200,7 +207,7 @@ export function invalidateReplayListCache () {
 /**
  * @param {string} dir
  * @param {{ fresh?: boolean, probe?: boolean }} [opts]
- *   probe — try Replay N by path (slow on Android Documents). Default: only if list empty.
+ *   probe — try Replay N by path. Default: only if list empty.
  */
 export function listReplays (dir, opts = {}) {
   const now = Date.now()
@@ -214,13 +221,20 @@ export function listReplays (dir, opts = {}) {
   }
 
   const byName = new Map()
+  const dirAbs = dir ? path.resolve(dir) : ''
   const add = (full) => {
     try {
       if (!full) return
       const abs = path.resolve(full)
+      // Never poke public Documents from Node — EACCES spam + hangs
+      if (process.env.BEDROCK_REPLAY_MOBILE === '1' && isPublicDocumentsPath(abs)) {
+        if (dirAbs && !isPublicDocumentsPath(dirAbs)) add(path.join(dirAbs, path.basename(abs)))
+        return
+      }
       if (!fs.existsSync(abs)) return
+      try { fs.accessSync(abs, fs.constants.R_OK) } catch { return }
       const st = fs.statSync(abs)
-      if (!st.isFile()) return
+      if (!st.isFile() || st.size <= 0) return
       const f = path.basename(abs)
       if (!f.endsWith('.mcreplay') && !f.endsWith('.mcreplay.gz')) return
       byName.set(f, { name: f, path: abs, size: st.size, mtime: st.mtime })
@@ -232,30 +246,57 @@ export function listReplays (dir, opts = {}) {
       for (const f of fs.readdirSync(dir)) add(path.join(dir, f))
     }
   } catch (e) {
-    console.warn('[listReplays] readdir fail', dir, e?.message || e)
+    const key = String(dir || '')
+    if (!_readdirWarned.has(key)) {
+      _readdirWarned.add(key)
+      console.warn('[listReplays] readdir fail', dir, e?.message || e)
+    }
   }
 
-  // Android Documents: readdir often misses files that still open by path.
+  // Mobile: also scan DATA_ROOT/replays if primary differs
+  if (process.env.BEDROCK_REPLAY_MOBILE === '1') {
+    try {
+      const internal = path.join(DATA_ROOT, 'replays')
+      if (internal && path.resolve(internal) !== path.resolve(dir || '')) {
+        if (fs.existsSync(internal)) {
+          for (const f of fs.readdirSync(internal)) add(path.join(internal, f))
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   try {
     const idxPath = replayIndexPath()
     if (fs.existsSync(idxPath)) {
       const raw = JSON.parse(fs.readFileSync(idxPath, 'utf8'))
       if (Array.isArray(raw)) {
         for (const row of raw) {
-          if (row?.path) add(row.path)
-          else if (row?.name && dir) add(path.join(dir, row.name))
+          if (row?.name && dirAbs) add(path.join(dirAbs, row.name))
+          else if (row?.path) add(row.path)
         }
       }
     }
   } catch { /* ignore bad index */ }
 
-  // Probe only when needed — 80×9 existsSync on every overlay poll stalled join (no login).
+  // Probe only when needed — avoid hammering existsSync every overlay poll.
   const wantProbe =
     opts.probe === true ||
     (opts.probe !== false && byName.size === 0)
   if (wantProbe && dir) {
-    for (let i = 1; i <= 40; i++) {
+    for (let i = 1; i <= 80; i++) {
       add(path.join(dir, `Replay ${i}.mcreplay.gz`))
+      add(path.join(dir, `Replay_${i}.mcreplay.gz`))
+    }
+    if (process.env.BEDROCK_REPLAY_MOBILE === '1') {
+      try {
+        const internal = path.join(DATA_ROOT, 'replays')
+        if (internal && path.resolve(internal) !== path.resolve(dir)) {
+          for (let i = 1; i <= 80; i++) {
+            add(path.join(internal, `Replay ${i}.mcreplay.gz`))
+            add(path.join(internal, `Replay_${i}.mcreplay.gz`))
+          }
+        }
+      } catch {}
     }
   }
 

@@ -3,13 +3,6 @@
  * .me FPV uses mePaths + abilities; invisibility helper kept for path reset.
  */
 
-import {
-  writeVarInt,
-  writeVarLong,
-  EMPTY_ITEM_V4,
-  PKT_MOB_ARMOR_EQUIPMENT
-} from './packetPatch.js'
-
 /** Bedrock effect id — Invisibility */
 const EFFECT_INVISIBILITY = 14
 
@@ -115,26 +108,15 @@ export function writeAbilities (client, entityUniqueId, { spectatorLayer = false
 }
 
 /**
- * Clear local armor (viewer FPV) without re-encoding Item via client.write —
- * on 1.26 that throws SizeOf / can kick (same family as ghost equip).
+ * Clear local armor (viewer FPV) via client.write with EMPTY items — safe:
+ * nothing real is re-encoded. The old RAW EMPTY_ITEM_V4 blob (19 bytes/slot,
+ * GamePE-era capture) left trailing garbage after the 1-byte vanilla empty
+ * item parse and instantly disconnected real clients on .me/.spec.
  */
 export function clearLocalArmor (client, runtimeEntityId) {
   if (!client || runtimeEntityId == null) return
   try {
     const rid = asRuntimeId(runtimeEntityId)
-    const buf = Buffer.concat([
-      writeVarInt(PKT_MOB_ARMOR_EQUIPMENT),
-      writeVarLong(rid),
-      EMPTY_ITEM_V4,
-      EMPTY_ITEM_V4,
-      EMPTY_ITEM_V4,
-      EMPTY_ITEM_V4,
-      EMPTY_ITEM_V4
-    ])
-    if (typeof client.sendBuffer === 'function') {
-      client.sendBuffer(buf, true)
-      return
-    }
     client.write('mob_armor_equipment', {
       runtime_entity_id: rid,
       helmet: emptyItem(),

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.3 — 2026-07-30
+
+PC + Android PLAY hardening:
+
+- Kick fixes: empty armor is one-byte / empty `client.write` (no garbage RAW); pause keepalive removed; `.me`/`.spec` single-flip (no hardReset / no reset on plain `.spec`)
+- `.me` inventory restored: forward recorded `inventory_*` / `player_hotbar` while possessing; fix GamePE `anvil_input` container; flush last known inv on enter (armor included)
+- Ghost/FPV skins: prefer tab-list bitmap; reassert after `.free`; do not push FPV skin onto `recordedSelf.uuid`
+
 ## 1.1.0 — 2026-07-22
 
 Release cleanup (PC + Android):

@@ -1,6 +1,6 @@
 {
   "name": "bedrock-replay",
-  "version": "1.1.0",
+  "version": "1.1.3",
   "description": "Record and play Minecraft Bedrock world replays (packet-based)",
   "type": "module",
   "main": "src/cli.js",
@@ -13,6 +13,7 @@
     "list": "node src/cli.js list",
     "versions": "node src/cli.js versions",
     "test": "node src/selftest.js",
+    "smoke": "node tools/smoke-bot.mjs",
     "launcher": "npm start --prefix launcher",
     "launcher:install": "npm install --prefix launcher",
     "dist": "npm run patch-deps && npm install --prefix launcher && npm run dist --prefix launcher",

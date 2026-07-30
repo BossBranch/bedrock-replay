@@ -80,11 +80,14 @@ export function replaceRuntimeEntityId (packetBuf, newRid) {
   ])
 }
 
-/** Empty ItemV4 wire bytes (1.26 — network_id=0), from GamePE mob_armor_equipment. */
-export const EMPTY_ITEM_V4 = Buffer.from(
-  '000000000000a6660a00000000000000000000',
-  'hex'
-)
+/**
+ * Empty item wire bytes: zigzag32 network_id = 0 → ONE byte, nothing follows.
+ * The previous 19-byte blob ('0000...a6660a...') was a readItemV4At misparse
+ * across slot boundaries of a GamePE packet — vanilla clients read the first
+ * 0x00 as "empty, done" and treated the rest as trailing garbage → instant
+ * disconnect whenever we sent a RAW armor clear (.me / .spec kicks).
+ */
+export const EMPTY_ITEM_V4 = Buffer.from([0x00])
 
 /** Packet ids (1.26.30) */
 export const PKT_MOB_ARMOR_EQUIPMENT = 32
@@ -151,6 +154,19 @@ export function peekInventoryWindowId (packetBuf) {
  * @param {bigint|number} ghostRid
  * @returns {Buffer|null}
  */
+export function buildMobArmorEquipmentRaw (ghostRid, items) {
+  const slots = []
+  for (let i = 0; i < 5; i++) {
+    const it = items?.[i]
+    slots.push(Buffer.isBuffer(it) && it.length ? it : EMPTY_ITEM_V4)
+  }
+  return Buffer.concat([
+    writeVarInt(PKT_MOB_ARMOR_EQUIPMENT),
+    writeVarLong(ghostRid),
+    ...slots
+  ])
+}
+
 export function inventoryArmorToMobArmor (invContentBuf, ghostRid) {
   if (!Buffer.isBuffer(invContentBuf) || invContentBuf.length < 6) return null
   try {
@@ -168,16 +184,53 @@ export function inventoryArmorToMobArmor (invContentBuf, ghostRid) {
       off = next
     }
     while (items.length < 5) items.push(EMPTY_ITEM_V4)
-    return Buffer.concat([
-      writeVarInt(PKT_MOB_ARMOR_EQUIPMENT),
-      writeVarLong(ghostRid),
-      items[0],
-      items[1],
-      items[2],
-      items[3],
-      items[4]
-    ])
+    return buildMobArmorEquipmentRaw(ghostRid, items)
   } catch {
     return null
   }
+}
+
+/**
+ * GamePE often updates local armor as inventory_slot(window=armor) instead of a
+ * full inventory_content. Parse one slot's Item bytes (verbatim) for a kit.
+ * @returns {{ slot: number, item: Buffer } | null}
+ */
+export function parseInventorySlotArmorItem (invSlotBuf) {
+  if (!Buffer.isBuffer(invSlotBuf) || invSlotBuf.length < 6) return null
+  try {
+    const [id, afterId] = readVarIntAt(invSlotBuf, 0)
+    if (id !== PKT_INVENTORY_SLOT) return null
+    const [win, afterWin] = readVarIntAt(invSlotBuf, afterId)
+    if ((win >>> 0) !== WIN_ARMOR) return null
+    const [slot, afterSlot] = readVarIntAt(invSlotBuf, afterWin)
+    if (slot < 0 || slot > 4) return null
+    let off = afterSlot
+    // FullContainerName: u8 container_id + optional u32
+    off += 1
+    if (off >= invSlotBuf.length) return null
+    const hasDyn = invSlotBuf[off++]
+    if (hasDyn) {
+      if (off + 4 > invSlotBuf.length) return null
+      off += 4
+    }
+    // storage_item then item — keep the worn piece (item)
+    ;[, off] = readItemV4At(invSlotBuf, off)
+    const [item] = readItemV4At(invSlotBuf, off)
+    return { slot, item }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fold an armor inventory_slot into a 5-piece kit and emit mob_armor_equipment RAW.
+ * @param {Buffer} invSlotBuf
+ * @param {bigint|number} ghostRid
+ * @param {Buffer[]} kit mutable length-5 item slices
+ */
+export function inventorySlotArmorToMobArmor (invSlotBuf, ghostRid, kit) {
+  const parsed = parseInventorySlotArmorItem(invSlotBuf)
+  if (!parsed || !Array.isArray(kit) || kit.length < 5) return null
+  kit[parsed.slot] = parsed.item
+  return buildMobArmorEquipmentRaw(ghostRid, kit)
 }

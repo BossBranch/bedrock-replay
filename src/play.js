@@ -15,21 +15,10 @@ import {
   clearLocalArmor
 } from './viewer.js'
 import {
-  applyMePath,
-  resetMePath,
   ME_PATH_LABELS,
   ME_COMMITTED_ME_PATH
 } from './mePaths.js'
 import { playMotdOptions } from './transfer.js'
-
-function reassertMe (spec, client, pathCtx = null) {
-  try {
-    if (spec?.mode !== 'follow') return
-    if (!spec.getTargetEntity?.()?.isGhost) return
-    const p = spec.getMePathId?.() ?? 0
-    if (p > 0 && pathCtx) applyMePath(client, pathCtx, p)
-  } catch {}
-}
 import { SKIP_PLAY_CLIENTBOUND, SOUND_PACKETS, revive } from './format.js'
 import { loadTimelineStreaming } from './replayStream.js'
 import {
@@ -250,6 +239,36 @@ function emptyItem () {
   return { network_id: 0 }
 }
 
+/**
+ * Recorded GamePE inventory_* often deserialize container_id as anvil_input (u8=0).
+ * Re-sending that applies to the wrong container — looks like "inventory broken".
+ */
+function containerForInvWindow (windowId, slot = null, isContent = false) {
+  const w = windowId
+  const ws = typeof w === 'string' ? w.toLowerCase() : w
+  if (ws === 'armor' || ws === 6 || ws === '6') return { container_id: 'armor' }
+  if (ws === 'offhand' || ws === 119 || ws === '119') return { container_id: 'offhand' }
+  if (ws === 'ui' || ws === 124 || ws === '124') return { container_id: 'cursor' }
+  if (isContent) return { container_id: 'hotbar_and_inventory' }
+  const s = Number(slot)
+  if (Number.isFinite(s) && s >= 0 && s <= 8) return { container_id: 'hotbar' }
+  if (Number.isFinite(s) && s >= 9) return { container_id: 'inventory' }
+  return { container_id: 'inventory' }
+}
+
+function fixInventoryParams (name, params) {
+  if (!params || (name !== 'inventory_slot' && name !== 'inventory_content')) return params
+  const isContent = name === 'inventory_content'
+  return {
+    ...params,
+    container: containerForInvWindow(params.window_id, params.slot, isContent),
+    storage_item:
+      params.storage_item && params.storage_item.network_id != null
+        ? params.storage_item
+        : emptyItem()
+  }
+}
+
 /** Force classic humanoid skin — client often rejects persona leftovers on local player_skin. */
 function classicizeSkin (skin) {
   const n = normalizeSkin(skin)
@@ -307,13 +326,13 @@ function normalizeEquipItem (item) {
 }
 
 /**
- * FPV main hand: select hotbar slot only.
- * Do NOT client.write inventory_* with re-encoded Items — on 1.26 that SizeOf-crashes
- * and kicks (especially when swapping to armor pieces / enchanted gear).
+ * FPV hand: slot select + RAW (sendLocalEquipRaw).
+ * Do NOT stuff synthetic inventory_slot — that kicks PC.
+ * Recorded inventory_* from the timeline is forwarded while possessing.
  */
 function equipLocalHeld (client, _localRid, held) {
   if (!client || !held) return false
-  if (isOffhandWindow(held.window_id)) return equipLocalOffhand(client, held)
+  if (isOffhandWindow(held.window_id)) return false
   const slot = Math.max(0, Math.min(8, Number(held.selected_slot ?? held.slot ?? 0) || 0))
   try {
     client.write('player_hotbar', {
@@ -328,10 +347,28 @@ function equipLocalHeld (client, _localRid, held) {
   }
 }
 
-/** FPV offhand — no inventory Item re-encode (kick on 1.26). */
-function equipLocalOffhand (client, _held) {
-  // Offhand visual via inventory_slot re-encode kicks; leave empty in FPV.
+function equipLocalOffhand (_client, _held) {
   return false
+}
+
+/**
+ * Patch recorded mob_equipment / armor RAW → local viewer rid and send.
+ * Same SizeOf-safe family as ghost RAW (verbatim Item bytes).
+ */
+function sendLocalEquipRaw (client, packetBuf, localRid, label = 'fpv') {
+  if (!client || !packetBuf?.length || localRid == null) return false
+  try {
+    const patched = replaceRuntimeEntityId(packetBuf, localRid)
+    if (typeof client.sendBuffer === 'function') {
+      client.sendBuffer(patched, true)
+    } else {
+      throw new Error('no sendBuffer')
+    }
+    return true
+  } catch (e) {
+    console.warn(`[play] FPV RAW ${label} failed`, e.message)
+    return false
+  }
 }
 
 /** Wipe spectator hotbar without Item payloads (slot park only). */
@@ -390,6 +427,45 @@ function scrubPlayerListLocator (params) {
     return { ...params, records: { ...params.records, records: copied } }
   }
   return { ...params, records: copied }
+}
+
+/**
+ * Drop the recorder's own tab-list row. Mid-session files put you in player_list
+ * under a GamePE uuid that is NOT the PLAY login uuid — same display name as the
+ * local viewer + ghost. That triple identity survives freecam but SizeOf/kicks
+ * the moment .me flips gamemode/abilities.
+ */
+function scrubRecorderFromPlayerList (params, nameHints = []) {
+  if (!params?.records) return params
+  const wrapped = params.records?.records != null
+  const block = wrapped ? params.records : params
+  const raw = block?.records
+  if (!Array.isArray(raw) || !raw.length) return params
+  const type = block.type
+  if (!(type === 'add' || type === 0 || type === '0')) return params
+  const deny = new Set(
+    nameHints
+      .filter(Boolean)
+      .map((n) => String(n).replace(/§./g, '').trim().toLowerCase())
+      .filter(Boolean)
+  )
+  if (!deny.size) return params
+  const filtered = raw.filter((r) => {
+    const un = String(r?.username || '').replace(/§./g, '').trim().toLowerCase()
+    return !un || !deny.has(un)
+  })
+  if (filtered.length === raw.length) return params
+  console.log(
+    `[play] scrubbed recorder from player_list (${raw.length}→${filtered.length})`
+  )
+  const nextBlock = {
+    ...block,
+    records: filtered,
+    records_count: filtered.length,
+    verified: filtered.map(() => true)
+  }
+  if (wrapped) return { ...params, records: nextBlock }
+  return { ...params, records: nextBlock }
 }
 
 function buildMovePlayer (runtimeId, cam, tick = 0n, { onGround = true } = {}) {
@@ -1216,6 +1292,14 @@ export async function startPlay (opts = {}) {
       let lastChunkResendAt = 0
       let lastChunkResendPos = null
       let chunkResendBusy = false
+      /** Chunks already delivered — re-blasting the same payload flickers the world. */
+      const deliveredChunkKeys = new Set()
+      const chunkKey = (x, z) => `${x},${z}`
+      const noteChunkDelivered = (p) => {
+        if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) {
+          deliveredChunkKeys.add(chunkKey(p.x, p.z))
+        }
+      }
 
       // NEVER burst these: 100+ chunks ≈ 7MB in one tick floods RakNet on the
       // phone — packets drop ("chunks won't load") and the client times out
@@ -1226,7 +1310,7 @@ export async function startPlay (opts = {}) {
         if (lastChunkResendPos) {
           const dx = pos.x - lastChunkResendPos.x
           const dz = pos.z - lastChunkResendPos.z
-          if (dx * dx + dz * dz < 32 * 32 && now - lastChunkResendAt < 3000) return
+          if (dx * dx + dz * dz < 64 * 64 && now - lastChunkResendAt < 6000) return
         }
         lastChunkResendAt = now
         lastChunkResendPos = { x: pos.x, y: pos.y, z: pos.z }
@@ -1235,19 +1319,20 @@ export async function startPlay (opts = {}) {
         const near = []
         for (const c of chunkEvIndex) {
           const d = Math.max(Math.abs(c.x - cx), Math.abs(c.z - cz))
-          if (d <= radiusChunks) near.push({ d, ev: c.ev })
+          if (d > radiusChunks) continue
+          if (deliveredChunkKeys.has(chunkKey(c.x, c.z))) continue
+          near.push({ d, ev: c.ev })
         }
         near.sort((a, b) => a.d - b.d)
         const batch = near.slice(0, cap)
         if (!batch.length) return
-        // Closest ring under the feet — sync, before any delay. Without this the
-        // client sits in void while the paced queue crawls and often self-kicks.
         const CORE = 16
         let n = 0
         for (const { ev } of batch.slice(0, CORE)) {
           if (client.status === 0) break
           try {
             client.write('level_chunk', ev.p)
+            noteChunkDelivered(ev.p)
             n++
           } catch {}
         }
@@ -1263,9 +1348,9 @@ export async function startPlay (opts = {}) {
               if (client.status === 0) break
               try {
                 client.write('level_chunk', ev.p)
+                noteChunkDelivered(ev.p)
                 n++
               } catch {}
-              // Gentler than 6/10ms — leaves room for cam + ghost (anti-robot stutter)
               if (n % 4 === 0) await sleep(25)
             }
           } finally {
@@ -1454,10 +1539,11 @@ export async function startPlay (opts = {}) {
         }
         const dx = pos.x - lastTerrainKeepPos.x
         const dz = pos.z - lastTerrainKeepPos.z
-        if (dx * dx + dz * dz < 48 * 48) return
+        if (dx * dx + dz * dz < 96 * 96) return
         lastTerrainKeepPos = { x: pos.x, z: pos.z }
         publishChunksAround(pos)
-        resendChunksNear(pos)
+        // Soft refill only — already-delivered chunks are skipped (anti-flicker).
+        resendChunksNear(pos, 4, 24)
       }
       client.on('player_auth_input', onViewerMove)
       client.on('move_player', onViewerMove)
@@ -1470,6 +1556,65 @@ export async function startPlay (opts = {}) {
       let lastT = 0
       let spectatorReady = false
       let ghostSpawned = false
+      /** Last skin pushed onto the ghost — re-assert after .free unhide */
+      let ghostSkinRef = null
+      let ghostSkinName = ''
+      let ghostUuid = null
+      /** Full player_list add pkt for ghost — needed to restore skin after unhide */
+      let ghostListPkt = null
+
+      const reassertGhostSkin = (why = '') => {
+        if (client?.status === 0 || !ghostSpawned || !ghostUuid || !ghostSkinRef) return false
+        try {
+          const skin = { ...ghostSkinRef }
+          try {
+            const id = `ghost-${Date.now().toString(36)}`
+            skin.skin_id = id
+            skin.full_skin_id = id
+          } catch {}
+          ghostSkinRef = skin
+          const list = fixPlayerListParams(
+            ghostListPkt || {
+              records: {
+                type: 'add',
+                records_count: 1,
+                records: [{
+                  uuid: ghostUuid,
+                  entity_unique_id: GHOST_UNIQUE_ID,
+                  username: ghostSkinName || ghostName || 'You',
+                  xbox_user_id: String(recordedSelf?.xuid || client?.profile?.xuid || '0'),
+                  platform_chat_id: '',
+                  build_platform: 7,
+                  skin_data: skin,
+                  is_teacher: false,
+                  is_host: false,
+                  is_subclient: false,
+                  player_color: -1
+                }],
+                verified: [true]
+              }
+            }
+          )
+          try {
+            const rec = list?.records?.records?.[0]
+            if (rec) rec.skin_data = skin
+          } catch {}
+          ghostListPkt = list
+          client.write('player_list', list)
+          client.write('player_skin', {
+            uuid: ghostUuid,
+            skin,
+            skin_name: ghostSkinName || 'You',
+            old_skin_name: '',
+            is_verified: true
+          })
+          if (why) console.log(`[play] ghost skin reassert (${why})`)
+          return true
+        } catch (e) {
+          console.warn('[play] ghost skin reassert failed', e.message)
+          return false
+        }
+      }
       /** uuid → Skin from player_list / add_player */
       const skinsByUuid = new Map()
       /** lowercase username → Skin (uuid often 00000000 on GamePE) */
@@ -1488,6 +1633,58 @@ export async function startPlay (opts = {}) {
       /** Last main-hand / offhand equipment per runtime id */
       const heldByRid = new Map()
       const offhandByRid = new Map()
+      /** Last recorded inventory for .me flush (packets often fire before .me). */
+      let lastMeInvContent = null
+      let lastMeOffhandContent = null
+      const lastMeArmorSlots = new Map()
+      const lastMeInvSlots = new Map()
+      let lastMeHotbarSelect = null
+
+      const noteRecordedInventory = (name, params) => {
+        if (!params) return
+        const w = params.window_id
+        if (name === 'inventory_content') {
+          if (w === 'inventory' || w === 0 || w === '0') lastMeInvContent = params
+          else if (isOffhandWindow(w)) lastMeOffhandContent = params
+        } else if (name === 'inventory_slot') {
+          const slot = Number(params.slot)
+          if (w === 'armor' || w === 6 || w === '6') lastMeArmorSlots.set(slot, params)
+          else if (w === 'inventory' || w === 0 || w === '0') lastMeInvSlots.set(slot, params)
+          else if (isOffhandWindow(w)) {
+            lastMeOffhandContent = {
+              window_id: 'offhand',
+              input: [params.item || emptyItem()],
+              container: { container_id: 'offhand' },
+              storage_item: emptyItem()
+            }
+          }
+        } else if (name === 'player_hotbar') {
+          lastMeHotbarSelect = params
+        }
+      }
+
+      const flushMeInventory = () => {
+        if (clientDead()) return
+        const send = (name, raw) => {
+          if (!raw) return
+          try {
+            client.write(name, fixInventoryParams(name, raw))
+          } catch (e) {
+            console.warn(`[play] .me inv ${name} failed`, e.message)
+          }
+        }
+        send('inventory_content', lastMeInvContent)
+        send('inventory_content', lastMeOffhandContent)
+        for (const p of lastMeArmorSlots.values()) send('inventory_slot', p)
+        for (const p of lastMeInvSlots.values()) send('inventory_slot', p)
+        if (lastMeHotbarSelect) {
+          try { client.write('player_hotbar', lastMeHotbarSelect) } catch {}
+        }
+        console.log(
+          `[play] .me inv flush content=${!!lastMeInvContent} ` +
+          `slots=${lastMeInvSlots.size} armor=${lastMeArmorSlots.size}`
+        )
+      }
       /** Runtime ids of OTHER players (add_player) — not the recorder */
       const otherPlayerRids = new Set()
       /**
@@ -1549,6 +1746,24 @@ export async function startPlay (opts = {}) {
       }
       try { preloadSkinsFromQueue(queue) } catch (e) {
         console.warn('[play] skin preload failed', e.message)
+      }
+      try {
+        for (const ev of queue) {
+          if (ev?.type !== 'pkt') continue
+          if (
+            ev.n === 'inventory_content' ||
+            ev.n === 'inventory_slot' ||
+            ev.n === 'player_hotbar'
+          ) {
+            noteRecordedInventory(ev.n, ev.p)
+          }
+        }
+        console.log(
+          `[play] preloaded .me inv content=${!!lastMeInvContent} ` +
+          `slots=${lastMeInvSlots.size} armor=${lastMeArmorSlots.size}`
+        )
+      } catch (e) {
+        console.warn('[play] inv preload failed', e.message)
       }
 
       // Seed other players + recorder hand from `held` events (serverbound capture)
@@ -1702,12 +1917,13 @@ export async function startPlay (opts = {}) {
           const s = String(u)
           if (!out.includes(s)) out.push(s)
         }
+        // Only the joining client's identity — recordedSelf.uuid can collide with
+        // tab-list rows and leave other bodies as Steve after .me.
         add(client.profile?.uuid)
         add(client.uuid)
         add(client.profile?.identity)
         add(client.profile?.extraData?.identity)
         add(client.identity)
-        add(recordedSelf?.uuid)
         console.log(
           `[play] FPV local identity candidates: ${out.join(' | ') || '(none)'} ` +
           `name=${client.profile?.name || client.username || '?'}`
@@ -1723,8 +1939,25 @@ export async function startPlay (opts = {}) {
         }
         const name = displayName || client.profile?.name || client.username || 'You'
         const localUid = asUniqueId(entityUniqueId)
-        const skin = classicizeSkin(ready)
+        // If this is already the ghost's working skin, push AS-IS (re-fixSkin
+        // was shrinking tab_fix 256² → 64² Steve-looking FPV).
+        const hasBitmap = (() => {
+          const d = ready?.skin_data?.data
+          if (Buffer.isBuffer(d)) return d.length >= 1000
+          if (d?.$bytes) return d.$bytes.length >= 1000
+          if (Array.isArray(d)) return d.length >= 1000
+          return false
+        })()
+        const skin = hasBitmap
+          ? { ...ready }
+          : (fixSkin(ready) || classicizeSkin(ready))
         if (!skin) return false
+        // Bust client skin cache so .me doesn't keep login Steve
+        try {
+          const id = `fpv-${Date.now().toString(36)}`
+          skin.skin_id = id
+          skin.full_skin_id = id
+        } catch {}
         let any = false
         for (const localUuid of uuids) {
           try {
@@ -1766,9 +1999,16 @@ export async function startPlay (opts = {}) {
             }
           }
         }
+        const blen = (() => {
+          const d = skin.skin_data?.data
+          if (Buffer.isBuffer(d)) return d.length
+          if (d?.$bytes) return d.$bytes.length
+          if (Array.isArray(d)) return d.length
+          return 0
+        })()
         console.log(
-          `[play] FPV skin push → uuids=${uuids.length} bytes=${skin.skin_data?.data?.length || 0} ` +
-          `arm=${skin.arm_size} ok=${any}`
+          `[play] FPV skin push → uuids=${uuids.length} bytes=${blen} ` +
+          `arm=${skin.arm_size} persona=${!!skin.persona} asis=${hasBitmap} ok=${any}`
         )
         return any
       }
@@ -1881,37 +2121,27 @@ export async function startPlay (opts = {}) {
       let noteHotbarSelection = (_slot) => {}
       const equipMeHeld = () => {
         try {
-          // Authentic FPV: item on real slot AND selected → actually in the hand
           const held = pickMeHeld()
           const heldSlot = Math.max(0, Math.min(8, Number(held?.selected_slot ?? held?.slot ?? 0) || 0))
-          clearGhostHands()
           if (controlHotbar) {
             suppressHotbarSlot(heldSlot, 120)
             noteHotbarSelection(heldSlot)
           }
-          if (held?.item?.network_id) {
-            const ok = equipLocalHeld(client, runtimeId, held)
-            if (ok) {
-              console.log(
-                `[play] .me FPV hand nid=${held.item.network_id} slot=${heldSlot + 1}`
-              )
-            }
-          } else {
-            try { clearSpectatorHotbar(client) } catch {}
-            if (controlHotbar) {
-              forceHotbarSlot(client, heldSlot, null)
-            }
+          let rawOk = false
+          if (lastGhostHeldRawMain) {
+            rawOk = sendLocalEquipRaw(client, lastGhostHeldRawMain, runtimeId, 'main')
           }
+          equipLocalHeld(client, runtimeId, held || { selected_slot: heldSlot })
+          if (lastGhostHeldRawOff) {
+            sendLocalEquipRaw(client, lastGhostHeldRawOff, runtimeId, 'off')
+          }
+          console.log(
+            `[play] .me FPV hand nid=${held?.item?.network_id ?? 0} slot=${heldSlot + 1}` +
+            (rawOk ? ' raw=1' : ' raw=0')
+          )
           if (controlHotbar) {
             noteHotbarSelection(heldSlot)
             suppressHotbarSlot(heldSlot, 120)
-          }
-          const off = pickMeOffhand()
-          if (off) {
-            equipLocalOffhand(client, off)
-            if (off.item?.network_id) {
-              console.log(`[play] .me FPV offhand nid=${off.item.network_id}`)
-            }
           }
         } catch (e) {
           console.warn('[play] me equip held failed', e.message)
@@ -1929,23 +2159,57 @@ export async function startPlay (opts = {}) {
           unlockInput(client, cam)
         } catch {}
       }
-      const mePathCtx = () => ({
-        entityUniqueId,
-        runtimeId,
-        viewer,
-        viewerMode,
-        equipHeld: equipMeHeld
-      })
-
       /** set after attachSpectatorHotbar — used to re-park on .spec / .free */
       let hotbarCtl = null
+      // FPV hand: RAW + player_hotbar; recorded inventory_* forwarded while possessing.
+      // Do not stuff synthetic inventory_slot (that path kicked on PC).
+
+      /**
+       * Pause envelope for .me enter / .free leave. The release recipe is fine on
+       * its own, but interleaved with the live replay stream (move_entity storms)
+       * the gamemode flip crashes real clients. Flip in silence, resume after.
+       */
+      let meHoldPause = false
+      let meResumeTimer = null
+      /** status may not be 0 yet inside the 'close' event — track explicitly */
+      let viewerGone = false
+      client.once('close', () => { viewerGone = true })
+      const clientDead = () => viewerGone || client?.status === 0
+      const mePauseReplay = () => {
+        try {
+          if (plane && !plane.paused && typeof plane.togglePause === 'function') {
+            plane.togglePause()
+            if (plane.paused) meHoldPause = true
+          }
+        } catch {}
+      }
+      const meResumeReplay = (delayMs = 750) => {
+        if (!meHoldPause) return
+        meHoldPause = false
+        if (meResumeTimer) clearTimeout(meResumeTimer)
+        meResumeTimer = setTimeout(() => {
+          meResumeTimer = null
+          try {
+            if (clientDead()) return
+            if (plane?.paused && typeof plane.togglePause === 'function') {
+              plane.togglePause()
+            }
+          } catch {}
+        }, delayMs)
+      }
 
       spec = new SpectateController({
         say,
         setGhostVisible: (visible) => {
           setGhostVisible(client, visible)
           if (visible) {
-            try { applyGhostHands() } catch {}
+            // player_list + player_skin — bare player_skin after invis left Steve
+            reassertGhostSkin('unhide')
+            setTimeout(() => {
+              if (clientDead() || spec?.isPossessing?.()) return
+              reassertGhostSkin('unhide+300')
+              try { applyGhostHands() } catch {}
+            }, 300)
           } else {
             try { clearGhostHands() } catch {}
             // Clear only — never re-encode remembered armor onto the ghost
@@ -1954,13 +2218,19 @@ export async function startPlay (opts = {}) {
         },
         setEntityVisible: (runtimeId, visible) => applyPossessVisuals(runtimeId, visible),
         onWatchStart: () => {
+          if (clientDead()) return
           try {
-            forceViewerMode(client, entityUniqueId, viewerMode)
-            clearSpectatorHotbar(client)
+            // NO gamemode flip here at all. Entering .spec/.me the client is
+            // already in viewer mode (or onMePathApply/Reset does the one
+            // needed flip). Redundant spectator re-flips + close_form on a
+            // busy world are exactly the burst that kicked real clients.
+            const targetingGhost = !!spec?.getTargetEntity?.()?.isGhost
+            if (!targetingGhost) {
+              clearSpectatorHotbar(client)
+            }
             clearLocalArmor(client, runtimeId)
-            if (spec?.getTargetEntity?.()?.isGhost) clearGhostHands()
             // .spec others: same empty+park-9 layout as freecam so key 1 works
-            if (controlHotbar && !spec?.isPossessing?.()) {
+            if (controlHotbar && !targetingGhost) {
               setTimeout(() => { try { hotbarCtl?.parkIdle?.() } catch {} }, 30)
             }
           } catch (e) {
@@ -1968,31 +2238,96 @@ export async function startPlay (opts = {}) {
           }
         },
         onWatchEnd: () => {
-          try { forceViewerMode(client, entityUniqueId, viewerMode) } catch {}
+          if (clientDead()) return
+          // No gamemode flip: .spec never left viewer mode, and leaving .me is
+          // onMePathReset's single flip. Extra re-flips kicked real clients.
           if (controlHotbar) {
             setTimeout(() => { try { hotbarCtl?.parkIdle?.() } catch {} }, 30)
           }
         },
+        onMeEnterBegin: () => { mePauseReplay() },
         onMeEquipHeld: () => { equipMeHeld() },
         onMePathApply: (pathId) => {
-          const r = applyMePath(client, mePathCtx(), pathId)
-          const tag = pathId === ME_COMMITTED_ME_PATH.pathId ? ' ★default' : ''
-          console.log(`[me] apply P${pathId}${tag} ok=${r.ok} ${ME_PATH_LABELS[pathId] || ''}`)
+          if (clientDead()) return
+          // Single-flip enter: adventure + fly + FPV hand. NO hardResetMeDebug —
+          // its camera/gamemode ladder is 2 extra flips that crash busy clients.
+          const n = Number(pathId) || 0
+          let r = { ok: true, path: n }
+          try {
+            if (n <= 0) {
+              forceViewerMode(client, entityUniqueId, viewerMode)
+            } else {
+              client.write('set_player_game_type', { gamemode: 'adventure' })
+              viewer.writeAbilities(client, entityUniqueId, {
+                spectatorLayer: false,
+                grounded: false
+              })
+              // Skin + hotbar AFTER the flip settles — same-tick push left FPV as Steve
+              // and inventory_slot in the enter burst kicked. RAW equip is safe now.
+              equipMeHeld()
+              const pushFpv = () => {
+                if (clientDead() || !spec?.isPossessing?.()) return
+                try {
+                  let ready = ghostSkinRef || recordedSelf?.skin
+                  if (!ready) {
+                    const nm = String(
+                      recordedSelf?.name || ghostName || client?.profile?.name || ''
+                    ).replace(/§./g, '').trim().toLowerCase()
+                    const tab = nm ? skinsByName.get(nm) : null
+                    if (tab) ready = tab
+                  }
+                  if (ready) pushLocalSkin(ready, recordedSelf?.name || ghostName)
+                } catch (e) {
+                  console.warn('[play] FPV skin push failed', e.message)
+                }
+                try { flushMeInventory() } catch {}
+                try { equipMeHeld() } catch {}
+              }
+              setTimeout(pushFpv, 120)
+              setTimeout(pushFpv, 400)
+            }
+          } catch (e) {
+            r = { ok: false, path: n, error: e.message }
+          }
+          const tag = n === ME_COMMITTED_ME_PATH.pathId ? ' ★default' : ''
+          console.log(`[me] apply P${n}${tag} ok=${r.ok} single-flip ${ME_PATH_LABELS[n] || ''}`)
           if (!r.ok) say(`§c[Me] fail: ${r.error || '?'}`)
           snapMeCam()
-          if (pathId > 0) {
-            equipMeHeld()
-            setTimeout(() => { try { equipMeHeld() } catch {} }, 50)
-            setTimeout(() => { try { equipMeHeld() } catch {} }, 200)
-          }
+          meResumeReplay(750)
         },
         onMePathReset: () => {
-          resetMePath(client, mePathCtx())
+          if (clientDead()) return
+          // Single-flip leave: camera clear + one spectator flip. No hardReset
+          // ladder, no invisibility pulse — those doubled the flips and kicked.
+          mePauseReplay()
+          try { client.write('camera_instruction', { clear: true }) } catch {}
+          try {
+            // forceViewerMode = game_type + close_form + abilities in one shot
+            forceViewerMode(client, entityUniqueId, viewerMode)
+          } catch (e) {
+            console.warn('[me] reset failed', e.message)
+          }
           try {
             clearSpectatorHotbar(client)
             clearLocalArmor(client, runtimeId)
           } catch {}
           snapMeCam()
+          // Ghost was unhidden before this reset; forceViewerMode can wipe its skin.
+          setTimeout(() => {
+            if (clientDead()) return
+            reassertGhostSkin('after-free')
+            try { applyGhostHands() } catch {}
+          }, 150)
+          setTimeout(() => {
+            if (clientDead()) return
+            reassertGhostSkin('after-free+500')
+          }, 500)
+          setTimeout(() => {
+            if (clientDead()) return
+            reassertGhostSkin('after-free+1200')
+          }, 1200)
+          console.log('[me] reset single-flip → freecam')
+          meResumeReplay(750)
         },
         sendLocalMove: (cam) => {
           localMoveTick += 1n
@@ -2016,8 +2351,15 @@ export async function startPlay (opts = {}) {
       })
 
       const applyViewerOrPossess = () => {
-        try { forceViewerMode(client, entityUniqueId, viewerMode) } catch {}
-        reassertMe(spec, client, mePathCtx())
+        // In .me re-assert via the SAME single-flip hook — applyMePath's
+        // hardReset ladder is exactly what kicks real clients mid-stream.
+        if (spec?.mode === 'follow' && spec.getTargetEntity?.()?.isGhost) {
+          try { spec.onMePathApply(spec.getMePathId?.() ?? 0) } catch {}
+          return
+        }
+        try {
+          forceViewerMode(client, entityUniqueId, viewerMode)
+        } catch {}
       }
 
       const onSpecClose = () => { try { spec.destroy() } catch {} }
@@ -2220,6 +2562,10 @@ export async function startPlay (opts = {}) {
       /** Absolute media-t: after a skipped mid-file start_game (void-hop reset),
        *  drop the following player_list/remove_entity flood that kicks Bedrock. */
       let worldResetSuppressUntilT = -1
+      /** First skipped start_game is the one we already bootstrapped — must NOT
+       *  suppress its follow-on player_list/add_player (join roster). Only later
+       *  mid-file start_game skips (void-hop) arm WORLD_RESET_SUPPRESS. */
+      let bootstrappedStartGameConsumed = false
       const WORLD_RESET_SUPPRESS = new Set([
         'player_list',
         'remove_entity',
@@ -2379,6 +2725,54 @@ export async function startPlay (opts = {}) {
             recordedSelf,
             version
           })
+          // Ghost-only skin polish: files without `self` often get blank/persona
+          // login on the remote body. Classic tab-list bitmap is display-only —
+          // NEVER written into recordedSelf (that path kicked .me).
+          try {
+            const candidates = [
+              built.username,
+              recordedSelf?.name,
+              client?.profile?.name,
+              client?.username
+            ]
+            let tab = null
+            let matched = ''
+            for (const raw of candidates) {
+              const uname = String(raw || '').replace(/§./g, '').trim().toLowerCase()
+              if (!uname) continue
+              const hit = skinsByName.get(uname)
+              if (hit) {
+                tab = hit
+                matched = uname
+                break
+              }
+            }
+            const bitmapLen = (() => {
+              const d = built.playerSkin?.skin?.skin_data?.data
+              if (Buffer.isBuffer(d)) return d.length
+              if (d?.$bytes) return d.$bytes.length
+              if (Array.isArray(d)) return d.length
+              return 0
+            })()
+            // Prefer tab whenever present — login often is 64² Steve (len≥1000)
+            // and previously skipped tab_fix.
+            if (tab) {
+              const skin = fixSkin(tab)
+              if (skin) {
+                if (built.playerList?.records?.records?.[0]) {
+                  built.playerList.records.records[0].skin_data = skin
+                }
+                if (built.playerSkin) built.playerSkin.skin = skin
+                if (built.addPlayer) built.addPlayer.skin = skin
+                built.skinSource = 'tab_fix'
+                console.log(`[play] ghost skin ← tab_fix (${matched || '?'}) bytes~${bitmapLen}`)
+              }
+            }
+          } catch {}
+          ghostSkinRef = built.playerSkin?.skin || built.addPlayer?.skin || null
+          ghostSkinName = built.username || ghostName
+          ghostUuid = built.uuid || built.playerSkin?.uuid || built.addPlayer?.uuid || null
+          ghostListPkt = built.playerList || null
           // Never put a real network_id on add_player / mob_equipment at spawn.
           // Even with a valid item_registry, our re-encoded equip item can crash
           // Bedrock («Произошла ошибка») within a second of join.
@@ -2481,16 +2875,11 @@ export async function startPlay (opts = {}) {
               else lastGhostHeldRawMain = buf
 
               if (possessing && !isArmor) {
-                if (offhand) equipLocalOffhand(client, ev.p || { window_id: 'offhand' })
-                else if (ev.p?.item?.network_id || ev.p?.network_id) equipMeHeld()
-                else {
-                  try { clearSpectatorHotbar(client) } catch {}
-                  if (controlHotbar) {
-                    noteHotbarSelection(IDLE_PARK_SLOT)
-                    suppressHotbarSlot(IDLE_PARK_SLOT, 120)
-                    forceHotbarSlot(client, IDLE_PARK_SLOT, null)
-                    noteHotbarSelection(IDLE_PARK_SLOT)
-                  }
+                // lastGhostHeldRaw* already updated above — equipMeHeld sends RAW→local
+                if (offhand) {
+                  sendLocalEquipRaw(client, buf, runtimeId, 'off')
+                } else {
+                  equipMeHeld()
                 }
               } else if (ghostSpawned && !possessing && Date.now() >= ghostEquipReadyAt) {
                 const label = isArmor ? 'armor' : (offhand ? 'off' : 'main')
@@ -2506,16 +2895,8 @@ export async function startPlay (opts = {}) {
             // JSON-only held (auth_input etc.) — local FPV only, never onto ghost
             if (offhand) {
               equipLocalOffhand(client, ev.p)
-            } else if (ev.p?.item?.network_id) {
-              equipMeHeld()
             } else {
-              try { clearSpectatorHotbar(client) } catch {}
-              if (controlHotbar) {
-                noteHotbarSelection(IDLE_PARK_SLOT)
-                suppressHotbarSlot(IDLE_PARK_SLOT, 120)
-                forceHotbarSlot(client, IDLE_PARK_SLOT, null)
-                noteHotbarSelection(IDLE_PARK_SLOT)
-              }
+              equipMeHeld()
             }
           }
           // Non-raw + freecam: maps updated above; do NOT client.write onto ghost
@@ -2662,13 +3043,14 @@ export async function startPlay (opts = {}) {
             if (!buf.length) return
 
             // Local player armor arrives as inventory_content(window=armor), not
-            // mob_armor_equipment. Convert → ghost RAW; never feed viewer inventory.
+            // mob_armor_equipment. Freecam: convert → ghost RAW. .me: forward to viewer.
             try {
               const [pid] = readVarIntAt(buf, 0)
               if (pid === PKT_INVENTORY_CONTENT || pid === PKT_INVENTORY_SLOT) {
                 const win = peekInventoryWindowId(buf)
+                const possessing = !!spec?.isPossessing?.()
                 if (win === WIN_ARMOR) {
-                  if (pid === PKT_INVENTORY_CONTENT && !spec?.isPossessing?.()) {
+                  if (pid === PKT_INVENTORY_CONTENT && !possessing) {
                     const built = inventoryArmorToMobArmor(buf, GHOST_RUNTIME_ID)
                     if (built?.length) {
                       lastGhostArmorRaw = built
@@ -2681,15 +3063,20 @@ export async function startPlay (opts = {}) {
                         }
                       }
                     }
+                    lastT = ev.t
+                    return
                   }
+                  if (!possessing) {
+                    lastT = ev.t
+                    return
+                  }
+                  // .me: fall through → sendBuffer armor inventory to FPV viewer
+                } else if (!possessing) {
+                  // Freecam/.spec: never feed non-armor inventory RAW to viewer
                   lastT = ev.t
                   return
                 }
-                // Other inventory_* RAW must never hit the viewer (freecam or .me).
-                // .me uses dedicated FPV equip (player_hotbar only) — forwarding
-                // recorded inventory was a latent SizeOf/kick path.
-                lastT = ev.t
-                return
+                // .me: fall through → sendBuffer recorded inventory RAW
               }
             } catch {}
 
@@ -2722,9 +3109,15 @@ export async function startPlay (opts = {}) {
           lastT = ev.t
           return
         }
-        // Freecam + .me: never apply inventory_* to the VIEWER (breaks hotbar / kicks).
-        // mob_equipment / mob_armor on the ghost & other players must still play —
-        // that is how hands/armor show. Remap recorded-self → ghost below.
+        // Freecam/.spec: never apply inventory_* to the VIEWER.
+        // .me: forward recorded inventory_* (pre-1.1 phone path) — not creative.
+        if (
+          ev.n === 'inventory_content' ||
+          ev.n === 'inventory_slot' ||
+          ev.n === 'player_hotbar'
+        ) {
+          noteRecordedInventory(ev.n, ev.p)
+        }
         if (
           !catchingUp &&
           !followRecording &&
@@ -2732,8 +3125,13 @@ export async function startPlay (opts = {}) {
             ev.n === 'inventory_slot' ||
             ev.n === 'creative_content')
         ) {
-          lastT = ev.t
-          return
+          if (
+            ev.n === 'creative_content' ||
+            !spec?.isPossessing?.()
+          ) {
+            lastT = ev.t
+            return
+          }
         }
         if (ev.n === 'play_status' && ev.p?.status === 'login_success') return
         if (ev.n === 'disconnect') return
@@ -2807,8 +3205,8 @@ export async function startPlay (opts = {}) {
             return
           }
 
-          // Block recorded inventory spam. Recorder hand → ghost body (freecam/.spec),
-          // and also → local FPV arms when .me.
+          // Freecam/.spec: block recorded inventory spam.
+          // .me: forward inventory_slot/content/player_hotbar (old phone path).
           if (SUPPRESS_INVENTORY_PACKETS.has(ev.n)) {
             if (ev.n === 'mob_equipment') {
               const rid = toNumId(ev.p?.runtime_entity_id)
@@ -2820,19 +3218,11 @@ export async function startPlay (opts = {}) {
                 rememberHeld(toNumId(GHOST_RUNTIME_ID), ev.p)
                 const possessing = !!spec?.isPossessing?.()
                 if (possessing) {
-                  // .me: only client FPV inventory — ghost stays empty-handed
+                  // .me: FPV hand select + RAW; ghost stays empty-handed
                   if (isOffhandWindow(ev.p?.window_id)) {
                     equipLocalOffhand(client, ev.p)
-                  } else if (ev.p?.item?.network_id) {
-                    equipMeHeld()
                   } else {
-                    try { clearSpectatorHotbar(client) } catch {}
-                    if (controlHotbar) {
-                      noteHotbarSelection(IDLE_PARK_SLOT)
-                      suppressHotbarSlot(IDLE_PARK_SLOT, 120)
-                      forceHotbarSlot(client, IDLE_PARK_SLOT, null)
-                      noteHotbarSelection(IDLE_PARK_SLOT)
-                    }
+                    equipMeHeld()
                   }
                 } else if (ghostSpawned) {
                   // Never client.write re-encoded gear onto the ghost — kicks.
@@ -2843,6 +3233,13 @@ export async function startPlay (opts = {}) {
                 lastT = ev.t
                 return
               }
+            } else if (
+              spec?.isPossessing?.() &&
+              (ev.n === 'inventory_slot' ||
+                ev.n === 'inventory_content' ||
+                ev.n === 'player_hotbar')
+            ) {
+              // fall through → client.write recorded packet to FPV viewer
             } else {
               skippedUi++
               return
@@ -2917,6 +3314,39 @@ export async function startPlay (opts = {}) {
 
         let params = ev.p
 
+        if (ev.n === 'inventory_slot' || ev.n === 'inventory_content') {
+          params = fixInventoryParams(ev.n, params)
+        }
+
+        // Recorder combat/status FX share start_game runtime id with the spectator.
+        // Freecam: drop on the local camera body (do NOT remap onto ghost — that
+        // poisoned metadata and kicked .me). .me: keep animate/entity_event so
+        // FPV arms swing; set_entity_data/mob_effect still dropped (invis/flags).
+        if (!followRecording) {
+          const rid = toNumId(params?.runtime_entity_id ?? params?.runtime_id)
+          if (rid === toNumId(runtimeId)) {
+            const possessing = !!spec?.isPossessing?.()
+            if (ev.n === 'set_entity_data' || ev.n === 'mob_effect') {
+              lastT = ev.t
+              return
+            }
+            if (ev.n === 'entity_event') {
+              if (!possessing) {
+                lastT = ev.t
+                return
+              }
+              // .me: fall through — remap onto local below via already-local rid
+            }
+            if (ev.n === 'animate') {
+              if (!possessing) {
+                lastT = ev.t
+                return
+              }
+              // .me: fall through to possess remap (swing + other arm anims)
+            }
+          }
+        }
+
         // Freecam owns the chunk radius — rewrite recorded publisher to viewer pos
         // so a far teleport in the recording never empties the world under us.
         if (
@@ -2939,7 +3369,17 @@ export async function startPlay (opts = {}) {
         }
 
         if (ev.n === 'player_list') {
-          params = fixPlayerListParams(scrubPlayerListLocator(ev.p))
+          params = fixPlayerListParams(
+            scrubRecorderFromPlayerList(
+              scrubPlayerListLocator(ev.p),
+              [
+                client?.profile?.name,
+                client?.username,
+                recordedSelf?.name,
+                ghostName
+              ]
+            )
+          )
           const block = params?.records || params
           const recs = block?.records
           if (Array.isArray(recs) && (block.type === 'add' || block.type === 0 || block.type === '0')) {
@@ -3012,9 +3452,14 @@ export async function startPlay (opts = {}) {
           // Second start_game after bootstrap wipes preloaded chunks → void forever
           if (worldBootstrapped && !resetCamera) {
             if (!catchingUp) console.log('[play] start_game skipped (already bootstrapped — keep chunks)')
-            // Void-hop / mode reset: next ~4s of media is a toxic player_list /
-            // remove_entity storm — suppress so freecam survives the hop.
-            worldResetSuppressUntilT = Math.max(worldResetSuppressUntilT, (ev.t ?? 0) + 4000)
+            if (bootstrappedStartGameConsumed) {
+              // Void-hop / mode reset: next ~4s of media is a toxic player_list /
+              // remove_entity storm — suppress so freecam survives the hop.
+              worldResetSuppressUntilT = Math.max(worldResetSuppressUntilT, (ev.t ?? 0) + 4000)
+            } else {
+              // Join roster lives right after this packet — do not suppress.
+              bootstrappedStartGameConsumed = true
+            }
             if (!spectatorReady) {
               forceViewerMode(client, entityUniqueId, viewerMode)
               unlockInput(client, spawnPos)
@@ -3123,18 +3568,22 @@ export async function startPlay (opts = {}) {
           }
         }
 
-        // .me adventure+fly: replay swings onto local arms (not endless pulse)
+        // .me: replay arm anims onto local FPV body (swing + use + etc.)
         if (ev.n === 'animate' && spec?.isPossessing?.()) {
           const rid = toNumId(params?.runtime_entity_id)
-          const action = params?.action_id
-          const isSwing = action === 'swing_arm' || action === 1 || action === '1'
-          if (
-            isSwing &&
-            (rid === toNumId(GHOST_RUNTIME_ID) || rid === toNumId(runtimeId))
-          ) {
+          if (rid === toNumId(GHOST_RUNTIME_ID) || rid === toNumId(runtimeId)) {
             params = {
               ...params,
-              action_id: 'swing_arm',
+              runtime_entity_id: typeof runtimeId === 'bigint' ? runtimeId : BigInt(toNumId(runtimeId))
+            }
+          }
+        }
+
+        if (ev.n === 'entity_event' && spec?.isPossessing?.()) {
+          const rid = toNumId(params?.runtime_entity_id ?? params?.runtime_id)
+          if (rid === toNumId(GHOST_RUNTIME_ID) || rid === toNumId(runtimeId)) {
+            params = {
+              ...params,
               runtime_entity_id: typeof runtimeId === 'bigint' ? runtimeId : BigInt(toNumId(runtimeId))
             }
           }
@@ -3161,7 +3610,41 @@ export async function startPlay (opts = {}) {
         lastT = ev.t
         trackFromPacket(ev.n, params)
 
-        if (ev.n === 'level_chunk') chunksSent++
+        // GamePE never CB-rebroadcasts your own swing_arm (Replay 1: 0 self animates).
+        // AttackStrong / Attack / Bow near the recorder are the only reliable cue —
+        // synthesize local FPV arm swing while in .me.
+        if (
+          ev.n === 'level_sound_event' &&
+          spec?.isPossessing?.() &&
+          !catchingUp
+        ) {
+          const sid = String(params?.sound_id ?? params?.sound_name ?? '')
+          if (/^Attack/i.test(sid) || sid === 'Bow') {
+            const pos = params?.position
+            const cam = spec?.cam || lastGhostCamPos
+            let near = true
+            if (pos && cam && Number.isFinite(pos.x) && Number.isFinite(cam.x)) {
+              const dx = pos.x - cam.x
+              const dy = (pos.y ?? 0) - (cam.y ?? 0)
+              const dz = pos.z - cam.z
+              near = dx * dx + dy * dy + dz * dz < 36 // 6 blocks
+            }
+            if (near) {
+              try {
+                const rid = typeof runtimeId === 'bigint' ? runtimeId : BigInt(toNumId(runtimeId) || 0)
+                client.write('animate', {
+                  action_id: 'swing_arm',
+                  runtime_entity_id: rid
+                })
+              } catch {}
+            }
+          }
+        }
+
+        if (ev.n === 'level_chunk') {
+          chunksSent++
+          noteChunkDelivered(params)
+        }
         if (ev.n === 'add_item_entity') {
           if (!catchingUp && sent % 200 === 0) {
             console.log(`[play] add_item_entity nid=${params?.item?.network_id} at ${params?.position?.x?.toFixed?.(1)}`)
@@ -3413,7 +3896,7 @@ export async function startPlay (opts = {}) {
         // Delay ghost: skin + add_player right on spawn races the client leaving
         // status=3→4 and correlates with instant sendReliable -3 on mobile.
         setTimeout(() => {
-          if (client?.status === 0) return
+          if (clientDead()) return
           if (isSanePos(spawnPos)) spawnGhost(spawnPos)
         }, 1200)
         if (controlHotbar) {
