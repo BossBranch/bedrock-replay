@@ -56,7 +56,7 @@ This tool records **server sessions** (join via Live proxy). For a normal local 
 Idea of a Bedrock proxy that records and replays gameplay was inspired by  
 [brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay).
 
-Telegram: [@BossBranch](https://t.me/BossBranch)
+Telegram/Discord: [@BossBranch](https://t.me/BossBranch)
 
 ---
 
@@ -96,4 +96,4 @@ Telegram: [@BossBranch](https://t.me/BossBranch)
 Идея прокси-записи/просмотра Bedrock вдохновлена проектом  
 [brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay).
 
-Telegram: [@BossBranch](https://t.me/BossBranch)
+Телеграмм/Дискорд: [@BossBranch](https://t.me/BossBranch)
