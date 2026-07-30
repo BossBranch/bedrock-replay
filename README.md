@@ -1,4 +1,4 @@
-﻿# Bedrock Server Replay
+# Bedrock Server Replay
 
 **v1.1.3**
 
@@ -56,6 +56,8 @@ This tool records **server sessions** (join via Live proxy). For a normal local 
 Idea of a Bedrock proxy that records and replays gameplay was inspired by  
 [brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay).
 
+Telegram: [@BossBranch](https://t.me/BossBranch)
+
 ---
 
 ## Русский
@@ -93,3 +95,5 @@ Idea of a Bedrock proxy that records and replays gameplay was inspired by
 
 Идея прокси-записи/просмотра Bedrock вдохновлена проектом  
 [brokiem/BedrockReplay](https://github.com/brokiem/BedrockReplay).
+
+Telegram: [@BossBranch](https://t.me/BossBranch)
