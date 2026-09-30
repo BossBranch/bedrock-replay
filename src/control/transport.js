@@ -8,6 +8,36 @@ function sleep (ms) {
   return new Promise((r) => setTimeout(r, Math.max(0, ms)))
 }
 
+/**
+ * Seek catch-up replays the whole skipped slice. These carry no lasting state,
+ * so replaying minutes of them at once only floods the client (hundreds of
+ * sounds in one tick, particle/animation spam) — skip them unless they are
+ * within CATCHUP_KEEP_MS of the seek target.
+ */
+const CATCHUP_EPHEMERAL = new Set([
+  'level_sound_event',
+  'level_sound_event_old',
+  'level_sound_event_v2',
+  'play_sound',
+  'stop_sound',
+  'spawn_particle_effect',
+  'animate',
+  'entity_event',
+  'text',
+  'toast_request',
+  'set_title'
+])
+const CATCHUP_KEEP_MS = 1500
+
+/** Absolute position packets: only the last one per entity matters after a seek. */
+const CATCHUP_ABS_MOVES = new Set(['move_player', 'move_entity'])
+
+function moveRid (ev) {
+  const p = ev?.p
+  const rid = p?.runtime_id ?? p?.runtime_entity_id
+  return rid == null ? null : String(rid)
+}
+
 export class ReplayTransport {
   /**
    * @param {{
@@ -304,10 +334,35 @@ export class ReplayTransport {
     }
 
     this.index = fromIdx
+    // Superseded absolute moves: keep only each entity's last one in the slice
+    const staleMoves = new Set()
+    const lastIdx = Math.min(targetIdx, this.events.length - 1)
+    {
+      const seen = new Set()
+      for (let i = lastIdx; i >= fromIdx; i--) {
+        const ev = this.events[i]
+        if (ev?.type !== 'pkt' || ev.raw || !CATCHUP_ABS_MOVES.has(ev.n)) continue
+        const rid = moveRid(ev)
+        if (rid == null) continue
+        const key = ev.n + ':' + rid
+        if (seen.has(key)) staleMoves.add(i)
+        else seen.add(key)
+      }
+    }
     let burst = 0
+    let skipped = 0
     while (this.index <= targetIdx && this.index < this.events.length) {
       if (this.client.status === 0 || this._aborted) break
-      await this.onEvent(this.events[this.index], {
+      const ev = this.events[this.index]
+      if (
+        staleMoves.has(this.index) ||
+        (ev?.type === 'pkt' && CATCHUP_EPHEMERAL.has(ev.n) && absT - (ev.t || 0) > CATCHUP_KEEP_MS)
+      ) {
+        this.index++
+        skipped++
+        continue
+      }
+      await this.onEvent(ev, {
         catchingUp: true,
         resetCamera: !!this._resetCamera,
         keepCamera: !this._resetCamera
@@ -320,6 +375,7 @@ export class ReplayTransport {
       else if (burst % 80 === 0) await sleep(0)
     }
 
+    if (skipped) console.log(`[transport] catch-up skipped ${skipped} ephemeral/superseded packets`)
     this._baseMedia = targetMedia
     this._wallAnchor = Date.now()
     this.index = Math.min(this.events.length, targetIdx + 1)

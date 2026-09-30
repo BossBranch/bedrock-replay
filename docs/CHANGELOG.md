@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased — stability + Bedrock 1.26.40 / 1.26.45 / 1.26.51
+
+New versions (PC + Android):
+
+- Bedrock **1.26.40 / 1.26.41 / 1.26.44** (protocol 2168), **1.26.45** (2169),
+  **1.26.51 / 1.26.52** (2193). `minecraft-data` 3.117.0; `bedrock-protocol`
+  pinned to **3.57.0** (all vendored patches are whole-file copies of it) with
+  the 1.26.40 datatypes backported (`maybeIncompleteArray`, `optionalOnRemaining`).
+- 1.26.40 reworked `player_list` (action per record), entity metadata
+  (`legacy_type` byte) and `Skin` — hub-built packets (ghost, invisibility,
+  nametags, tab-list fixes, LIVE wipe) now follow the active protocol shape
+  (`src/protoShape.js`). Without it the ghost/other players were invisible and
+  `player_skin` crashed on 1.26.4x+.
+- Raw armor/equipment parsing follows the 1.26.40 `ItemV4.stack_id` layout.
+- Client with a **different known protocol** is refused with the version to pick
+  (was: let in with wrong codecs → broken world / kicks after Minecraft auto-updates).
+- Version mapping works on protocol ids; Android no longer maps a pruned
+  version (e.g. 1.26.20) onto another protocol's codecs.
+- Android bundle: exact dependency versions (a caret range pulled
+  bedrock-protocol 3.58+ under the 3.57 patches), same patch list as PC,
+  1.26.40 / 1.26.45 / 1.26.51 data shipped. `1.26.50` is protocol 2193 → pick 1.26.51.
+
+Stability:
+
+- LIVE (PC): original server/client bytes are forwarded instead of re-encoding
+  every packet (items/NBT drift, CPU); an upstream packet the codec cannot read
+  no longer kicks the player ("Server packet parse error").
+- PLAY: outbound byte pacer (`playMaxKBps`; default 1536 KB/s on phones or any
+  jsp-raknet backend, 8192 KB/s on PC raknet-native; 0 = off) for seek catch-up,
+  chunk preload and warp re-sends — bursts overflowed jsp-raknet (no congestion
+  control): in a 36 MB flood test the old code choked the connection (other
+  players never arrived), the paced one kept streaming.
+- Seek catch-up no longer replays minutes of sounds / particles / animations /
+  chat at once, and sends only each entity's last absolute move.
+- Recording: raw backlog capped by bytes (64 MB PC / 24 MB phone) instead of
+  dropping packets after 256 → no more holes in terrain / missing entities.
+- Mobile: raw `item_registry` now also sets the codec's shield item id.
+- Replay file write errors (disk full, storage revoked) are logged instead of
+  surfacing as uncaught exceptions.
+- `npm test` covers version mapping, 1.26.51 packet shapes, the pacer and
+  flood recording without drops.
+
 ## 1.1.3 — 2026-07-30
 
 PC + Android PLAY hardening:

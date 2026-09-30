@@ -20,7 +20,7 @@ Do not require an exact patch match when the protocol id is the same.
 
 ```json
 {
-  "version": "1.26.30",
+  "version": "1.26.51",
   "autoVersion": false,
   "livePort": 19132,
   "playPort": 19133,
@@ -44,6 +44,7 @@ node src/cli.js versions
 
 | Client range | Record | Play / freecam | Viewer | Possess (.me/.spec) | Notes |
 |---|---|---|---|---|---|
+| 1.26.40 – 1.26.52 | yes | yes | **spectator** | yes | New packet shapes handled by `src/protoShape.js` |
 | ≥ 1.21.x | yes | yes | **spectator** | yes | Primary target |
 | 1.20.x – 1.21 | yes* | yes* | spectator | yes | If in minecraft-data |
 | 1.19.50 – 1.19.x | yes* | yes* | spectator | yes | Spectator since 1.19.50 |
@@ -52,6 +53,19 @@ node src/cli.js versions
 | Not in minecraft-data | no | no | — | — | Startup error |
 
 \*Only if `bedrock_<version>` exists for the installed `bedrock-protocol` dependency.
+
+**Android APK** ships protocol data only for 1.16.201, 1.19.40, 1.19.50, 1.21.100,
+1.21.111, 1.26.30, 1.26.40, 1.26.45, 1.26.51 (+ their data dependencies) —
+see `targets` in `tools/prepare-android-node.mjs`. Other versions are refused
+with an explicit error instead of being mapped onto another protocol.
+
+**Protocol check on join:** a client whose protocol id is known but differs from
+the hub is disconnected with the version to select. Unknown (newer than
+minecraft-data) protocols are still let in best-effort.
+
+**Hotfix labels whose protocol is not the floor base** are listed under
+`unreliable` in `data/bedrock-client-versions.json` (e.g. 1.26.50 = protocol
+2193 = 1.26.51, not 1.26.45).
 
 ## Viewer modes
 

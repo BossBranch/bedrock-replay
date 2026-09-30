@@ -11,8 +11,13 @@ import {
   possessEnabledForVersion,
   versionsCompatible,
   resolveToSupportedVersion,
-  protocolIdForVersion
+  protocolIdForVersion,
+  versionForProtocolId
 } from './version.js'
+import { configureProtocolShapes, adaptOutgoing, readPlayerList } from './protoShape.js'
+import { configureItemLayoutForVersion } from './packetPatch.js'
+import { SendPacer } from './control/pacer.js'
+import { createRequire } from 'module'
 import { fileURLToPath } from 'url'
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'replays')
@@ -91,6 +96,73 @@ if (!chunk?._spilled || chunk.p?.payload?.length !== 5000) throw new Error('spil
 streamed.spill.close()
 fs.unlinkSync(fat)
 try { fs.unlinkSync(replayMetaPath(fat)) } catch {}
+
+// 1.26.40+ protocols: mapping by protocol id, not by label floor
+for (const [label, base] of [['1.26.44', '1.26.40'], ['1.26.45', '1.26.45'], ['1.26.52', '1.26.51'], ['1.26.33', '1.26.30']]) {
+  if (resolveToSupportedVersion(label) !== base) {
+    throw new Error(`expected ${label} → ${base}, got ${resolveToSupportedVersion(label)}`)
+  }
+}
+if (versionForProtocolId(2193) !== '1.26.51') throw new Error('protocol 2193 → 1.26.51')
+if (versionForProtocolId(123456) !== null) throw new Error('unknown protocol → null')
+
+// Hub-built packets must survive the 1.26.51 codec with their content intact
+{
+  const require = createRequire(import.meta.url)
+  const { createSerializer, createDeserializer } = require('bedrock-protocol/src/transforms/serializer.js')
+  const v = '1.26.51'
+  configureProtocolShapes(v)
+  if (configureItemLayoutForVersion(v) !== false) throw new Error('1.26.51 ItemV4 stack_id is a bare zigzag32')
+  const ser = createSerializer(v)
+  const des = createDeserializer(v)
+  const roundtrip = (name, params) =>
+    des.parsePacketBuffer(ser.createPacketBuffer({ name, params: adaptOutgoing(name, params) })).data.params
+  const legacyList = {
+    records: {
+      type: 'remove',
+      records_count: 1,
+      records: [{ uuid: '11111111-2222-3333-4444-555555555555' }]
+    }
+  }
+  const back = readPlayerList(roundtrip('player_list', legacyList))
+  if (back.records.length !== 1 || back.records[0].type !== 'remove' || back.records[0].legacy_type !== 1) {
+    throw new Error('player_list remove lost on 1.26.51')
+  }
+  const meta = roundtrip('set_entity_data', {
+    runtime_entity_id: 2n,
+    metadata: [{ key: 'always_show_nametag', type: 'byte', value: 1 }],
+    properties: { ints: [], floats: [] },
+    tick: 0n
+  }).metadata
+  if (meta[0]?.legacy_type !== 0) throw new Error('metadata legacy_type not set on 1.26.51')
+  configureProtocolShapes('1.26.30')
+  configureItemLayoutForVersion('1.26.30')
+}
+
+// Pacer: over budget → wait() blocks until tokens refill
+{
+  const sent = []
+  const fake = { status: 4, connection: { sendReliable: (b) => sent.push(b.length) } }
+  const pacer = SendPacer.attach(fake, { kbps: 1000, burstKB: 16 })
+  fake.connection.sendReliable(Buffer.alloc(64 * 1024))
+  if (!pacer.over()) throw new Error('pacer should be over budget')
+  const t0 = Date.now()
+  await pacer.wait()
+  if (Date.now() - t0 < 30) throw new Error('pacer did not wait')
+  if (sent[0] !== 65536 || SendPacer.attach(fake, { kbps: 0 }) !== pacer || pacer.over()) {
+    throw new Error('pacer hook / reuse / unlimited failed')
+  }
+}
+
+// Raw backlog: a 1000-packet flood is recorded without drops
+{
+  const flood = path.join(dir, '_floodtest.mcreplay.gz')
+  const w3 = new ReplayWriter(flood, { version: '1.21.100' })
+  for (let i = 0; i < 1000; i++) w3.rawClientbound(Buffer.from([0xfe, i & 0xff, 1, 2, 3]))
+  const st3 = await w3.close({ reason: 'test' })
+  if (w3._rawDropped || st3.packets !== 1000) throw new Error(`raw flood dropped ${w3._rawDropped}`)
+  fs.unlinkSync(flood)
+}
 
 fs.unlinkSync(file)
 console.log('selftest OK')

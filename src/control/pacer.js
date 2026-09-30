@@ -16,12 +16,17 @@ function sleep (ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
 }
 
-/** Budget in KB/s; config `playMaxKBps` (0 = unlimited). */
+/**
+ * Budget in KB/s; config `playMaxKBps` (0 = unlimited). jsp-raknet (phones,
+ * or forced on PC) has no congestion control — a headless jsp client already
+ * choked at 8 MB/s bursts in tests, so it gets the phone budget.
+ */
 export function paceOptionsFromConfig (cfg = {}) {
   const mobile = process.env.BEDROCK_REPLAY_MOBILE === '1'
+  const jsp = cfg.raknetBackend === 'jsp-raknet'
   const raw = cfg.playMaxKBps
   const kbps = raw == null || raw === '' || !Number.isFinite(Number(raw))
-    ? (mobile ? 1536 : 8192)
+    ? (mobile || jsp ? 1536 : 8192)
     : Math.max(0, Number(raw))
   return {
     kbps,

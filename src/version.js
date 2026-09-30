@@ -193,7 +193,7 @@ export function listSupportedBedrockVersions () {
 export async function resolveRuntimeVersion (cfg) {
   const raw = cfg.version
   const wantAuto = raw === 'auto' || cfg.autoVersion === true
-  let configured = normalizeVersion(wantAuto ? null : raw) || '1.26.30'
+  let configured = normalizeVersion(wantAuto ? null : raw) || '1.26.51'
   const dest = cfg.destination
 
   let pinged = null

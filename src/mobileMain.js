@@ -740,7 +740,7 @@ async function main () {
 
   const cfgFile = configPath()
   if (!fs.existsSync(cfgFile)) {
-    let version = '1.26.30'
+    let version = '1.26.51'
     try {
       const { buildClientVersionEntries } = await import('./version.js')
       const seed = path.join(ROOT, 'data', 'bedrock-client-versions.json')
@@ -769,10 +769,10 @@ async function main () {
   try {
     const raw = JSON.parse(fs.readFileSync(cfgFile, 'utf8'))
     if (!raw.version || raw.version === '1.21.100') {
-      raw.version = '1.26.30'
+      raw.version = '1.26.51'
       raw.advertiseHost = raw.advertiseHost || '127.0.0.1'
       fs.writeFileSync(cfgFile, JSON.stringify(raw, null, 2) + '\n')
-      pushLog('[mobile] config.version → 1.26.30')
+      pushLog('[mobile] config.version → 1.26.51')
     }
   } catch {}
 

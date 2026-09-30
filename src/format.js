@@ -92,6 +92,15 @@ export class ReplayWriter {
     const gzLevel = process.env.BEDROCK_REPLAY_MOBILE === '1' ? 1 : 6
     this.gz = createGzip({ level: gzLevel })
     this.out = fs.createWriteStream(filePath)
+    // Disk full / storage revoked (Android) must not surface as an
+    // uncaughtException from a listener-less stream; close() still rejects.
+    this.error = null
+    const onErr = (e) => {
+      if (!this.error) console.warn(`[record] replay file write failed: ${e?.message || e}`)
+      this.error = this.error || e
+    }
+    this.gz.on('error', onErr)
+    this.out.on('error', onErr)
     this.gz.pipe(this.out)
     this._writeObj({
       type: 'header',
@@ -102,6 +111,7 @@ export class ReplayWriter {
   }
 
   _writeObj (obj) {
+    if (this.error) return
     this.gz.write(JSON.stringify(sanitize(obj)) + '\n')
   }
 
