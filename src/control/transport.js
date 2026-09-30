@@ -36,6 +36,8 @@ export class ReplayTransport {
     this.say = opts.say
     this.localRuntimeId = opts.localRuntimeId
     this.plane = opts.plane
+    /** @type {import('./pacer.js').SendPacer | null} outbound byte budget */
+    this.pacer = opts.pacer || null
 
     this.index = opts.seekIndex.startIdx
     this._speed = opts.plane?.speed ?? 1
@@ -312,7 +314,10 @@ export class ReplayTransport {
       })
       this.index++
       burst++
-      if (burst % 80 === 0) await sleep(0)
+      // Catch-up replays the whole slice in one go — keep it under the wire
+      // budget or the client drowns (Android: UDP overflow → timeout kick).
+      if (this.pacer?.over()) await this.pacer.wait()
+      else if (burst % 80 === 0) await sleep(0)
     }
 
     this._baseMedia = targetMedia
@@ -396,7 +401,8 @@ export class ReplayTransport {
         // One cam per pump slice — bursting densified cams = teleport "обрывки".
         // Do NOT sleep here: wall clock still runs → artificial lag (= "slow jump" in .me).
         if (ev.type === 'cam') break
-        if (sentBurst % 40 === 0) await sleep(0)
+        if (this.pacer?.over()) await this.pacer.wait()
+        else if (sentBurst % 40 === 0) await sleep(0)
       }
 
       if (this._seekGen !== gen) continue

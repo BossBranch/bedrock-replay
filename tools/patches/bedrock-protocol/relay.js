@@ -300,7 +300,16 @@ class RelayPlayer extends Player {
         return
       }
 
-      this.queue(name, params)
+      // Forward the server's own bytes unless proxy logic may rewrite the
+      // packet (PARSE_NAMES: transfer / disconnect text / start_game …).
+      // Re-encoding every parsed packet drifted items/NBT and cost CPU on the
+      // live path — the same reason mobile already forwards bytes.
+      if (!PARSE_NAMES.has(name) && des.fullBuffer?.length) {
+        this._processOutbound(name, params) // item palette → ShieldItemID
+        this.sendBuffer(Buffer.from(des.fullBuffer), false)
+      } else {
+        this.queue(name, params)
+      }
     }
 
     if (this.sentStartGame) {
@@ -472,8 +481,10 @@ class RelayPlayer extends Player {
         default:
           // Emit the packet as-is back to the upstream server
           this.downInLog('Relaying', des.data)
-          // Prefer original bytes when available (no re-encode drift)
-          if (des.fullBuffer && this._whitelistParse) {
+          // Prefer original bytes when available (no re-encode drift). Serverbound
+          // handlers only cancel packets, never rewrite them, so this is safe on
+          // PC too — re-encoded auth_input / inventory_transaction got kicked.
+          if (des.fullBuffer?.length) {
             try {
               this.upstream.sendBuffer(Buffer.from(des.fullBuffer), false)
               break

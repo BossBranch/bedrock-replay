@@ -6,6 +6,9 @@ import { finished } from 'stream/promises'
 
 export const MAGIC = 'MCREPLAY1'
 
+/** Raw record backlog limit (encoder behind the relay) before anything drops */
+const RAW_QUEUE_MAX_BYTES = (process.env.BEDROCK_REPLAY_MOBILE === '1' ? 24 : 64) * 1024 * 1024
+
 /** Packets that are session/crypto specific — never useful to replay as-is */
 export const SKIP_RECORD_CLIENTBOUND = new Set([
   'server_to_client_handshake',
@@ -81,6 +84,7 @@ export class ReplayWriter {
     this.camCount = 0
     /** @type {{ t: number, buf: Buffer }[]} */
     this._rawQ = []
+    this._rawQBytes = 0
     this._rawBusy = false
     this._rawDropped = 0
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -116,24 +120,30 @@ export class ReplayWriter {
   /**
    * Heavy clientbound as raw game bytes (no protodef on live path).
    * Encode+write is async/budgeted — never block the relay tick (Android lag).
-   * @param {{ noDrop?: boolean }} [opts] noDrop: bypass the 64-cap. The .start
-   *   chunk-cache flush pushes 100+ bufs at once — capping it silently dropped
-   *   the INNERMOST spawn chunks (cached first = shifted out first) and left
-   *   a hole under the start point in every recording.
+   * @param {{ noDrop?: boolean }} [opts] noDrop: never evicted by the backlog
+   *   cap. The .start chunk-cache flush pushes 100+ bufs at once — capping it
+   *   silently dropped the INNERMOST spawn chunks (cached first = shifted out
+   *   first) and left a hole under the start point in every recording.
    */
   rawClientbound (buf, opts) {
     if (!buf?.length) return
     // Copy now — UDP buffer may be reused
     const copy = Buffer.isBuffer(buf) ? Buffer.from(buf) : Buffer.from(buf)
-    // 256 (was 64): teleport chunk floods (~200 pkts) overflowed the queue and
-    // punched holes in the recorded terrain at the destination
-    if (!opts?.noDrop && this._rawQ.length >= 256) {
-      this._rawQ.shift()
-      this._rawDropped++
+    // Cap by BYTES, not packet count. The old 64/256-packet cap dropped the
+    // oldest packets during join/teleport floods (mobile records EVERY packet
+    // raw) → holes in terrain and missing add/remove entity in the file. Only
+    // a genuinely runaway backlog (encoder starved for seconds) drops now.
+    if (!opts?.noDrop) {
+      while (this._rawQ.length && this._rawQBytes + copy.length > RAW_QUEUE_MAX_BYTES) {
+        const dropped = this._rawQ.shift()
+        this._rawQBytes -= dropped.buf.length
+        this._rawDropped++
+      }
     }
     // opts.n: hint for loaders when offline decode fails (e.g. item_registry)
     const n = typeof opts?.n === 'string' && opts.n ? opts.n : 'raw'
     this._rawQ.push({ t: this.now(), buf: copy, n })
+    this._rawQBytes += copy.length
     this._pumpRaw()
   }
 
@@ -142,9 +152,12 @@ export class ReplayWriter {
     this._rawBusy = true
     const step = () => {
       const t0 = Date.now()
-      // ≤2ms of encode work per turn so RakNet ACKs stay alive
-      while (this._rawQ.length && (Date.now() - t0) < 2) {
+      // ≤2ms of encode work per turn so RakNet ACKs stay alive; a longer slice
+      // only while a flood is backed up (I/O still runs between slices)
+      const budgetMs = this._rawQ.length > 128 ? 6 : 2
+      while (this._rawQ.length && (Date.now() - t0) < budgetMs) {
         const item = this._rawQ.shift()
+        this._rawQBytes -= item.buf.length
         this.count++
         // Skip sanitize() — base64 string only; sanitize would re-walk it
         const nJson = JSON.stringify(item.n || 'raw')

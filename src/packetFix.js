@@ -24,6 +24,14 @@ export function asUniqueId (v, fallback = 0n) {
  */
 export function fixPlayerListParams (params) {
   if (!params || typeof params !== 'object') return params
+  // 1.26.40+ shape: { records: [{ type, legacy_type, uuid, … }] } — per-record
+  // action, no count/verified; fix the rows and keep the shape.
+  if (Array.isArray(params.records)) {
+    return {
+      ...params,
+      records: params.records.map((r) => (r && r.type !== 'remove' ? fixListRecord(r) : r))
+    }
+  }
   const wrapped = params.records && typeof params.records === 'object' &&
     (params.records.records != null || params.records.type != null)
   const block = wrapped ? { ...params.records } : { ...params }
@@ -91,15 +99,18 @@ export function fixSkin (skin) {
     animation_data: String(skin.animation_data || ''),
     cape_id: String(skin.cape_id || ''),
     full_skin_id: String(skin.full_skin_id || skin.skin_id || 'skin'),
+    // 1.26.40+ decodes these as numbers — keep them (String() lost the colour)
     arm_size: String(skin.arm_size || 'wide'),
-    skin_color: String(skin.skin_color || '#0'),
+    skin_color: typeof skin.skin_color === 'number' ? skin.skin_color : String(skin.skin_color || '#0'),
     personal_pieces: Array.isArray(skin.personal_pieces) ? skin.personal_pieces : [],
     piece_tint_colors: Array.isArray(skin.piece_tint_colors) ? skin.piece_tint_colors : [],
     premium: !!skin.premium,
     persona: !!skin.persona,
     cape_on_classic: !!skin.cape_on_classic,
     primary_user: skin.primary_user !== false,
-    overriding_player_appearance: skin.overriding_player_appearance !== false
+    overriding_player_appearance: skin.overriding_player_appearance !== false,
+    ...(skin.trusted != null ? { trusted: String(skin.trusted) } : {}),
+    ...(skin.profile_hash != null ? { profile_hash: String(skin.profile_hash) } : {})
   }
 }
 

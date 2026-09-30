@@ -6,6 +6,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { spawnSync } from 'child_process'
+import { BEDROCK_PROTOCOL_VERSION, applyBedrockProtocolPatches } from './patch-deps.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
@@ -46,16 +47,27 @@ function copyDir (src, dest, { filter } = {}) {
 rmrf(OUT)
 fs.mkdirSync(OUT, { recursive: true })
 
+const rootPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
+/** jsp-raknet release the files in tools/patches/jsp-raknet were copied from */
+const JSP_RAKNET_VERSION = '2.2.0'
 const pkg = {
   name: 'bedrock-replay-android',
-  version: JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version,
+  version: rootPkg.version,
   private: true,
   type: 'module',
   main: 'src/mobileMain.js',
   engines: { node: '>=18' },
+  // EXACT versions: no lockfile here, and both patch sets are whole-file copies.
+  // A caret range pulled bedrock-protocol 3.58+ (rewritten auth) under the
+  // 3.57 patches → broken logins in the APK.
   dependencies: {
-    'bedrock-protocol': '^3.57.0',
-    'jsp-raknet': '^2.1.3'
+    'bedrock-protocol': BEDROCK_PROTOCOL_VERSION,
+    'minecraft-data': rootPkg.dependencies['minecraft-data'],
+    'jsp-raknet': JSP_RAKNET_VERSION
+  },
+  overrides: {
+    'jsp-raknet': JSP_RAKNET_VERSION,
+    'minecraft-data': rootPkg.dependencies['minecraft-data']
   }
 }
 fs.writeFileSync(path.join(OUT, 'package.json'), JSON.stringify(pkg, null, 2) + '\n')
@@ -200,11 +212,14 @@ pruneForAndroidAssets(path.join(OUT, 'node_modules'))
 function pruneMinecraftData () {
   const md = path.join(OUT, 'node_modules', 'minecraft-data', 'minecraft-data', 'data')
   const pathsFile = path.join(md, 'dataPaths.json')
+  // Versions NOT listed here are unavailable in the APK (resolveToSupportedVersion
+  // refuses them instead of mapping onto another protocol).
   const targets = [
     '1.16.201',
     '1.19.40', '1.19.50',
     '1.21.100', '1.21.111',
-    '1.26.30'
+    '1.26.30',
+    '1.26.40', '1.26.45', '1.26.51'
   ]
   const keepBedrock = new Set(['common', 'latest', ...targets])
   const keepPc = new Set(['common'])
@@ -286,25 +301,9 @@ function patchJspRaknet () {
 }
 patchJspRaknet()
 
-// Offline / 1.26 TokenPayload login + relay parity with PC postinstall
-{
-  const bpPatches = [
-    ['loginVerify.js', 'handshake/loginVerify.js'],
-    ['serverPlayer.js', 'serverPlayer.js'],
-    ['keyExchange.js', 'handshake/keyExchange.js'],
-    ['connection.js', 'connection.js'],
-    ['framer.js', 'transforms/framer.js'],
-    ['relay.js', 'relay.js']
-  ]
-  for (const [file, rel] of bpPatches) {
-    const src = path.join(ROOT, 'tools', 'patches', 'bedrock-protocol', file)
-    const dest = path.join(OUT, 'node_modules', 'bedrock-protocol', 'src', rel)
-    if (fs.existsSync(src) && fs.existsSync(path.dirname(dest))) {
-      fs.copyFileSync(src, dest)
-      console.log('patched bedrock-protocol', rel)
-    }
-  }
-}
+// Offline / 1.26 TokenPayload login + relay + 1.26.40+ datatypes — same list
+// and version guard as the PC postinstall (tools/patch-deps.mjs)
+applyBedrockProtocolPatches(path.join(OUT, 'node_modules'))
 
 function dirSizeMb (dir) {
   let sum = 0

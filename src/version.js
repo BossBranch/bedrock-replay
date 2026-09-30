@@ -81,23 +81,72 @@ export function resolveToSupportedVersion (wanted) {
   if (!v) return null
   if (isBedrockVersionSupported(v)) return v
 
-  const all = listSupportedBedrockVersions()
-  if (!all.length) return null
+  // Floor over EVERY known release (protocolVersions.json survives the Android
+  // prune), not just the loadable ones: with 1.26.20 pruned, the old loadable-
+  // only floor mapped a 1.26.20 client onto 1.26.10 codecs (other protocol) →
+  // garbled packets and kicks.
+  const known = listKnownBedrockVersions()
+  const pool0 = known.length ? known : listSupportedBedrockVersions()
+  if (!pool0.length) return null
 
   const [maj, min] = v.split('.').map((x) => parseInt(x, 10) || 0)
-  const sameLine = all.filter((x) => {
+  const sameLine = pool0.filter((x) => {
     const p = x.split('.').map((n) => parseInt(n, 10) || 0)
     return p[0] === maj && p[1] === min
   })
-  const pool = sameLine.length ? sameLine : all
+  const pool = sameLine.length ? sameLine : pool0
 
-  // Floor: newest supported ≤ client
+  // Floor: newest known ≤ client; only if nothing older exists — nearest newer
   const floor = pool.filter((c) => compareSemver(c, v) <= 0)
-  if (floor.length) return floor[floor.length - 1]
+  const base = floor.length
+    ? floor[floor.length - 1]
+    : pool.find((c) => compareSemver(c, v) > 0) || null
+  if (!base) return null
+  if (isBedrockVersionSupported(base)) return base
 
-  // Only if nothing older exists — nearest newer (should be rare)
-  const above = pool.filter((c) => compareSemver(c, v) > 0)
-  return above[0] || null
+  // Base known but its data is not shipped in this build — another loadable
+  // version with the SAME protocol id is equivalent; anything else is not.
+  const proto = knownProtocolId(base)
+  if (proto == null) return null
+  return listSupportedBedrockVersions().find((c) => knownProtocolId(c) === proto) || null
+}
+
+/** Release versions minecraft-data knows about (loadable or not), oldest first. */
+export function listKnownBedrockVersions () {
+  try {
+    const list = (mcData.versions?.bedrock || [])
+      .filter((row) => !row.releaseType || row.releaseType === 'release')
+      .map((row) => normalizeVersion(row.minecraftVersion))
+      .filter(Boolean)
+    const uniq = [...new Set(list)]
+    uniq.sort(compareSemver)
+    return uniq
+  } catch {
+    return []
+  }
+}
+
+/** Protocol id from the version table only (works for pruned data too). */
+export function knownProtocolId (version) {
+  const v = normalizeVersion(version)
+  if (!v) return null
+  try {
+    const row = (mcData.versions?.bedrock || []).find(
+      (r) => normalizeVersion(r.minecraftVersion) === v
+    )
+    const id = Number(row?.version)
+    return Number.isFinite(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
+/** Newest known release label for a protocol id (e.g. 2193 → 1.26.51). */
+export function versionForProtocolId (protocol) {
+  const id = Number(protocol)
+  if (!Number.isFinite(id)) return null
+  const hits = listKnownBedrockVersions().filter((v) => knownProtocolId(v) === id)
+  return hits.length ? hits[hits.length - 1] : null
 }
 
 function semverNumeric (v) {
@@ -244,16 +293,46 @@ export function applyBedrockVersionCompat (server, { advertiseVersion, protocolB
         `[version] login clientProtocol=${clientVersion} serverProtocol=${ours} ` +
         `motd=${player.server?.advertisement?.version}`
       )
-      if (ours != null && Number(clientVersion) > Number(ours)) {
-        // Same-line hotfixes: allow through; codecs remain on protocolBase
-        console.warn(
-          `[version] client protocol ${clientVersion} > server ${ours} — allowing hotfix client`
-        )
-        return true
+      if (ours != null && Number(clientVersion) !== Number(ours)) {
+        const refusal = protocolMismatchMessage(Number(clientVersion), Number(ours), protocolBase)
+        if (refusal) {
+          // A KNOWN different protocol: our codecs would misread every packet
+          // (the old "allow newer" path produced exactly the unstable world /
+          // kicks after Minecraft auto-updated). Say which version to pick.
+          console.warn(`[version] refuse client protocol ${clientVersion} (hub ${ours}): ${refusal.log}`)
+          try { player.disconnect(refusal.text) } catch {}
+          return false
+        }
+        if (Number(clientVersion) > Number(ours)) {
+          // Unknown newer protocol (minecraft-data not updated yet): best effort
+          console.warn(
+            `[version] client protocol ${clientVersion} > server ${ours} (unknown to minecraft-data) — allowing`
+          )
+          return true
+        }
       }
       return orig(clientVersion)
     }
   })
+}
+
+/**
+ * @returns {{ text: string, log: string } | null} null when the client protocol
+ *   is unknown (cannot say anything useful — keep the lenient path)
+ */
+function protocolMismatchMessage (clientProtocol, hubProtocol, hubBase) {
+  const clientVer = versionForProtocolId(clientProtocol)
+  if (!clientVer) return null
+  const hubVer = normalizeVersion(hubBase) || versionForProtocolId(hubProtocol) || '?'
+  const available = isBedrockVersionSupported(clientVer)
+  const log = `client=${clientVer} hub=${hubVer} available=${available}`
+  const text = available
+    ? `Minecraft ${clientVer} ≠ hub ${hubVer}.\n` +
+      `Выбери версию ${clientVer} в приложении.\n` +
+      `Select version ${clientVer} in the app.`
+    : `Minecraft ${clientVer} не поддерживается этой сборкой (hub ${hubVer}).\n` +
+      `Minecraft ${clientVer} is not supported by this build.`
+  return { text, log }
 }
 
 /**

@@ -2,6 +2,27 @@
  * Binary patch helpers for replaying equipment WITHOUT re-encoding Item payloads.
  * Bedrock 1.26 runtime_entity_id is unsigned varlong (NOT zigzag) after packet id.
  */
+import mcData from 'minecraft-data'
+
+/**
+ * ItemV4.stack_id layout: 1.26.0–1.26.30 wrap it in ItemV4NetIdVariant
+ * (varint type + zigzag32 id); 1.26.40+ send a bare zigzag32. Reading the old
+ * layout on a new client ate one extra byte → garbage armor RAW → kick.
+ */
+let stackIdIsVariant = true
+
+/** Pick the ItemV4 stack_id layout from minecraft-data for the hub runtime version. */
+export function configureItemLayoutForVersion (version) {
+  try {
+    const t = mcData('bedrock_' + version)?.protocol?.types?.ItemV4
+    const field = Array.isArray(t) && t[0] === 'container'
+      ? t[1].find((f) => f?.name === 'stack_id')
+      : null
+    const whenPresent = field?.type?.[1]?.fields?.true
+    if (typeof whenPresent === 'string') stackIdIsVariant = whenPresent === 'ItemV4NetIdVariant'
+  } catch {}
+  return stackIdIsVariant
+}
 
 /** Read unsigned varint → [valueNumber, nextOffset] */
 export function readVarIntAt (buf, off) {
@@ -121,10 +142,10 @@ export function readItemV4At (buf, off) {
   off += 2 // lu16 count
   ;[, off] = readVarIntAt(buf, off) // metadata
   if (off >= buf.length) throw new Error('ItemV4 option eof')
-  const hasVariant = buf[off++]
-  if (hasVariant) {
-    // ItemV4NetIdVariant: varint type + zigzag32 id
-    ;[, off] = readVarIntAt(buf, off)
+  const hasStackId = buf[off++]
+  if (hasStackId) {
+    // ≤1.26.30 ItemV4NetIdVariant: varint type + zigzag32 id; 1.26.40+: zigzag32
+    if (stackIdIsVariant) [, off] = readVarIntAt(buf, off)
     ;[, off] = readZigZag32At(buf, off)
   }
   ;[, off] = readVarIntAt(buf, off) // block_runtime_id

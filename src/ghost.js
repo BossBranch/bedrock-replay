@@ -299,11 +299,12 @@ export function normalizeSkin (skin) {
     cape_id: skin.cape_id || '',
     full_skin_id: skin.full_skin_id || skin.skin_id || 'ghost',
     arm_size: skin.arm_size || 'wide',
-    skin_color: skin.skin_color || '#0',
+    // 1.26.40+ decodes colour / piece type as numbers — keep them as-is
+    skin_color: skin.skin_color ?? '#0',
     personal_pieces: Array.isArray(skin.personal_pieces)
       ? skin.personal_pieces.map((p) => ({
         piece_id: p.piece_id || '',
-        piece_type: p.piece_type || '',
+        piece_type: p.piece_type ?? '',
         pack_id: p.pack_id || '',
         is_default_piece: !!p.is_default_piece,
         product_id: p.product_id || ''
@@ -312,14 +313,16 @@ export function normalizeSkin (skin) {
     piece_tint_colors: Array.isArray(skin.piece_tint_colors)
       ? skin.piece_tint_colors.map((t) => ({
         piece_type: t.piece_type || '',
-        colors: Array.isArray(t.colors) ? t.colors.map(String) : []
+        colors: Array.isArray(t.colors) ? t.colors.map((c) => (typeof c === 'number' ? c : String(c))) : []
       }))
       : [],
     premium: !!skin.premium,
     persona: !!skin.persona,
     cape_on_classic: !!skin.cape_on_classic,
     primary_user: true,
-    overriding_player_appearance: true
+    overriding_player_appearance: true,
+    ...(skin.trusted != null ? { trusted: String(skin.trusted) } : {}),
+    ...(skin.profile_hash != null ? { profile_hash: String(skin.profile_hash) } : {})
   }
   return out
 }

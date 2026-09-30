@@ -16,9 +16,11 @@ import {
   PKT_INVENTORY_CONTENT,
   PKT_INVENTORY_SLOT,
   WIN_ARMOR,
-  EMPTY_ITEM_V4
+  EMPTY_ITEM_V4,
+  configureItemLayoutForVersion
 } from './packetPatch.js'
 import { createLiveDiag } from './liveDiag.js'
+import { configureProtocolShapes, installOutgoingAdapter, readPlayerList } from './protoShape.js'
 
 /** Packets kept from join until .start so mid-session files still have a real world bootstrap */
 const BOOTSTRAP_PACKETS = new Set([
@@ -55,14 +57,6 @@ function ridStr (id) {
   if (typeof id === 'bigint') return id.toString()
   if (typeof id === 'object' && id.$bigint != null) return String(id.$bigint)
   return String(id)
-}
-
-function playerListRecords (params) {
-  if (!params) return { type: null, records: [] }
-  const wrapped = params.records?.records != null
-  const type = wrapped ? params.records.type : params.type
-  const raw = wrapped ? params.records.records : params.records
-  return { type, records: Array.isArray(raw) ? raw : [], wrapped }
 }
 
 const { Relay, Client } = bedrock
@@ -481,6 +475,8 @@ export async function startRecord (opts = {}) {
   const { version } = opts.version
     ? { version: opts.version }
     : await resolveRuntimeVersion(cfg)
+  configureItemLayoutForVersion(version)
+  configureProtocolShapes(version)
   const dest = cfg.destination
   const listenPort = Number(opts.listenPort ?? cfg.livePort ?? cfg.listenPort ?? 19132)
   const followTransfers = cfg.followTransfers !== false
@@ -613,7 +609,13 @@ export async function startRecord (opts = {}) {
       try {
         const des = player?.server?.deserializer?.parsePacketBuffer?.(copy)
         const states = des?.data?.params?.itemstates
-        if (Array.isArray(states) && states.length) persistItemRegistryCache(states, copy)
+        if (Array.isArray(states) && states.length) {
+          // RAW-forwarded registry never passed through queue() → the shared
+          // codec never learned ShieldItemID, so later Item parses (held/armor
+          // samples) misread shields. Same palette hook the PC path runs.
+          try { player.updateItemPalette?.(states) } catch {}
+          persistItemRegistryCache(states, copy)
+        }
       } catch (e) {
         console.warn('[record] item_registry raw decode for cache failed', e.message)
       }
@@ -955,13 +957,13 @@ export async function startRecord (opts = {}) {
       return
     }
     if (name === 'player_list' && params) {
-      const { type, records } = playerListRecords(params)
-      const t = String(type ?? '')
-      const isRemove = t === 'remove' || t === '1'
+      // 1.26.40+: the action lives on each record, not on the packet
+      const { type, records, perRecord } = readPlayerList(params)
       for (const rec of records) {
         if (!rec) continue
         const uuid = rec.uuid != null ? String(rec.uuid) : null
         if (!uuid) continue
+        const isRemove = perRecord ? rec.type === 'remove' : type === 'remove'
         if (isRemove) {
           knownListRecords.delete(uuid)
           for (const [rid, ap] of knownPlayers) {
@@ -1329,8 +1331,10 @@ export async function startRecord (opts = {}) {
     profilesFolder: cfg.profilesFolder,
     forceSingle: true,
     enableChunkCaching: false,
-    // Parse-fail soft mode: jsp only. Native Android matches PC (hard fail + raw forward in relay).
-    omitParseErrors: cfg.raknetBackend === 'jsp-raknet',
+    // Parse-fail soft mode everywhere: the relay already raw-forwards the
+    // unparsed bytes to Minecraft (and into the recording). Hard mode kicked PC
+    // players for any packet our codec could not read ("Server packet parse error").
+    omitParseErrors: true,
     motd: liveMotdOptions(),
     // Mobile: lighter deflate during handshake (big skin login)
     ...(process.env.BEDROCK_REPLAY_MOBILE === '1'
@@ -1584,6 +1588,8 @@ export async function startRecord (opts = {}) {
 
   relay.on('connect', (player) => {
     console.log(`[record] Client connected ${player.connection?.address}`)
+    // Hub-built player_list / skins / metadata → active protocol shape
+    installOutgoingAdapter(player)
     // Without an 'error' listener a decryption "Checksum mismatch" becomes an
     // uncaughtException thrown BEFORE the lib can disconnect — the session then
     // zombies: world streams in, but no serverbound packet decodes (no commands,

@@ -40,6 +40,8 @@ import {
 import { SpectateController, ridKey, ghostKey } from './spectate.js'
 import { ControlPlane } from './control/plane.js'
 import { ReplayTransport } from './control/transport.js'
+import { SendPacer, paceOptionsFromConfig } from './control/pacer.js'
+import { configureProtocolShapes, installOutgoingAdapter, readPlayerList } from './protoShape.js'
 import { startControlServer } from './control/web.js'
 import {
   giveControlHotbar,
@@ -51,7 +53,7 @@ import { buildSeekIndex } from './seek/index.js'
 import fs from 'fs'
 import { buildSyntheticStartGame } from './startGameBootstrap.js'
 import { fixPlayerListParams, fixActorIds, fixSkin, asUniqueId } from './packetFix.js'
-import { replaceRuntimeEntityId, inventoryArmorToMobArmor, peekInventoryWindowId, readVarIntAt, PKT_INVENTORY_CONTENT, PKT_INVENTORY_SLOT, WIN_ARMOR } from './packetPatch.js'
+import { replaceRuntimeEntityId, inventoryArmorToMobArmor, peekInventoryWindowId, readVarIntAt, PKT_INVENTORY_CONTENT, PKT_INVENTORY_SLOT, WIN_ARMOR, configureItemLayoutForVersion } from './packetPatch.js'
 
 function loadCachedStartGame (replaysDir) {
   try {
@@ -437,12 +439,6 @@ function scrubPlayerListLocator (params) {
  */
 function scrubRecorderFromPlayerList (params, nameHints = []) {
   if (!params?.records) return params
-  const wrapped = params.records?.records != null
-  const block = wrapped ? params.records : params
-  const raw = block?.records
-  if (!Array.isArray(raw) || !raw.length) return params
-  const type = block.type
-  if (!(type === 'add' || type === 0 || type === '0')) return params
   const deny = new Set(
     nameHints
       .filter(Boolean)
@@ -450,6 +446,24 @@ function scrubRecorderFromPlayerList (params, nameHints = []) {
       .filter(Boolean)
   )
   if (!deny.size) return params
+  // 1.26.40+: per-record action — drop only matching ADD rows
+  const list = readPlayerList(params)
+  if (list.perRecord) {
+    const kept = list.records.filter((r) => {
+      if (!r || r.type === 'remove') return true
+      const un = String(r.username || '').replace(/§./g, '').trim().toLowerCase()
+      return !un || !deny.has(un)
+    })
+    if (kept.length === list.records.length) return params
+    console.log(`[play] scrubbed recorder from player_list (${list.records.length}→${kept.length})`)
+    return { ...params, records: kept }
+  }
+  const wrapped = params.records?.records != null
+  const block = wrapped ? params.records : params
+  const raw = block?.records
+  if (!Array.isArray(raw) || !raw.length) return params
+  const type = block.type
+  if (!(type === 'add' || type === 0 || type === '0')) return params
   const filtered = raw.filter((r) => {
     const un = String(r?.username || '').replace(/§./g, '').trim().toLowerCase()
     return !un || !deny.has(un)
@@ -810,6 +824,7 @@ function resolvePlaybackStart (queue, startMode, client) {
 async function preloadWorldPackets (queue, writePkt, spawnPos, opts = {}) {
   const maxChunks = opts.maxChunks == null ? Infinity : opts.maxChunks
   const skip = opts.skip || new Set()
+  const pacer = opts.pacer || null
   const pubs = []
   const chunks = []
   const other = []
@@ -856,7 +871,8 @@ async function preloadWorldPackets (queue, writePkt, spawnPos, opts = {}) {
     preloaded.add(ev)
     written++
     if (ev.n === 'level_chunk' || ev.n === 'subchunk') chunkCount++
-    if (written % 8 === 0) await sleep(1)
+    if (pacer?.over()) await pacer.wait()
+    else if (written % 8 === 0) await sleep(1)
   }
 
   return { preloaded, chunks: chunkCount }
@@ -916,6 +932,8 @@ export async function startPlay (opts = {}) {
   const allowEmpty = opts.allowEmpty === true
   const playListenPort = Number(opts.port ?? cfg.playPort ?? 19133)
 
+  configureItemLayoutForVersion(version)
+  configureProtocolShapes(version)
   const possessOk = possessEnabledForVersion(version)
   console.log(`[play] host ready version=${version} viewerMode=${viewerMode} possess=${possessOk} port=${playListenPort}`)
   console.log(`[play] active file=${activeFilePath ? path.basename(activeFilePath) : '(none yet)'}`)
@@ -1272,6 +1290,14 @@ export async function startPlay (opts = {}) {
       }
       try { plane.setAnnounce(say) } catch {}
 
+      // Hub-built player_list / skins / metadata → active protocol shape
+      installOutgoingAdapter(client)
+      // Outbound byte budget for this viewer (see control/pacer.js)
+      const pacer = SendPacer.attach(client, paceOptionsFromConfig(cfg))
+      if (pacer) {
+        console.log(`[play] pacing ${pacer.unlimited ? 'off' : `${Math.round(pacer.ratePerMs * 1000 / 1024)} KB/s`}`)
+      }
+
       // Keep chat quiet — one line on start; details via .help
       say(`§a[Replay] ${path.basename(filePath).replace(/\.mcreplay\.gz$/i, '')}`)
 
@@ -1351,7 +1377,8 @@ export async function startPlay (opts = {}) {
                 noteChunkDelivered(ev.p)
                 n++
               } catch {}
-              if (n % 4 === 0) await sleep(25)
+              if (pacer?.over()) await pacer.wait()
+              else if (n % 4 === 0) await sleep(25)
             }
           } finally {
             chunkResendBusy = false
@@ -3380,15 +3407,12 @@ export async function startPlay (opts = {}) {
               ]
             )
           )
-          const block = params?.records || params
-          const recs = block?.records
-          if (Array.isArray(recs) && (block.type === 'add' || block.type === 0 || block.type === '0')) {
-            for (const rec of recs) {
-              if (!rec) continue
-              if (rec.uuid != null) listRecByUuid.set(String(rec.uuid), { ...rec })
-              if (rec?.skin_data || rec?.skin) {
-                rememberSkin(rec.uuid, rec.skin_data || rec.skin, rec.username)
-              }
+          const list = readPlayerList(params)
+          for (const rec of list.records) {
+            if (!rec || (list.perRecord ? rec.type === 'remove' : list.type !== 'add')) continue
+            if (rec.uuid != null) listRecByUuid.set(String(rec.uuid), { ...rec })
+            if (rec.skin_data || rec.skin) {
+              rememberSkin(rec.uuid, rec.skin_data || rec.skin, rec.username)
             }
           }
         } else if (
@@ -3852,7 +3876,7 @@ export async function startPlay (opts = {}) {
         }
 
         // Seed a few chunks so Bedrock can leave status=3 (Initializing)
-        const seed = await preloadWorldPackets(queue, writePkt, spawnPos, { maxChunks: 24 })
+        const seed = await preloadWorldPackets(queue, writePkt, spawnPos, { maxChunks: 24, pacer })
         preloadedWorld = seed.preloaded
         chunksSent = seed.chunks
         console.log(`[play] Seeded ${seed.chunks} level_chunk before spawn`)
@@ -3870,7 +3894,8 @@ export async function startPlay (opts = {}) {
         // and the client is already gone while the hub keeps "playing".
         const pre = await preloadWorldPackets(queue, writePkt, spawnPos, {
           skip: preloadedWorld,
-          maxChunks: 48
+          maxChunks: 48,
+          pacer
         })
         for (const ev of pre.preloaded) preloadedWorld.add(ev)
         chunksSent += pre.chunks
@@ -3914,6 +3939,7 @@ export async function startPlay (opts = {}) {
         seekIndex,
         client,
         plane,
+        pacer,
         localRuntimeId: runtimeId,
         say,
         closeForms,
