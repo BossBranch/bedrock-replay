@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — stability + Bedrock 1.26.40 / 1.26.45 / 1.26.51
+## 1.1.4 — 2026-10-06 · stability + Bedrock 1.26.40 / 1.26.45 / 1.26.51
 
 New versions (PC + Android):
 

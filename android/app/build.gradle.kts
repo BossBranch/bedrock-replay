@@ -13,8 +13,8 @@ android {
         applicationId = "ru.bedrock.serverreplay"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1104
-        versionName = "1.1.3"
+        versionCode = 1105
+        versionName = "1.1.4"
         ndkVersion = "27.0.12077973"
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
