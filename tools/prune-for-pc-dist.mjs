@@ -80,7 +80,8 @@ function pruneMinecraftData () {
     '1.17.0',
     '1.19.1', '1.19.10', '1.19.40', '1.19.50',
     '1.21.60', '1.21.70', '1.21.80', '1.21.100', '1.21.111',
-    '1.26.30'
+    '1.26.30',
+    '1.26.40', '1.26.45', '1.26.51'
   ]
   const keepBedrock = new Set(['common', 'latest'])
   const keepPc = new Set(['common'])
